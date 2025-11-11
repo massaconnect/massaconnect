@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="MassaPay - Secure self-custodial wallet for Massa blockchain. Your keys, your crypto, your freedom.">
+    <meta name="keywords" content="Massa, wallet, cryptocurrency, blockchain, self-custodial, Android">
+    <meta name="author" content="MassaPay Team">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://massawallet.github.io/massapay/">
+    <meta property="og:title" content="MassaPay - Secure Massa Blockchain Wallet">
+    <meta property="og:description" content="Your keys. Your crypto. Your freedom. Self-custodial wallet with bank-level security.">
+    <meta property="og:image" content="https://massawallet.github.io/massapay/screenshots/1.png">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://massawallet.github.io/massapay/">
+    <meta property="twitter:title" content="MassaPay - Secure Massa Blockchain Wallet">
+    <meta property="twitter:description" content="Your keys. Your crypto. Your freedom.">
+    <meta property="twitter:image" content="https://massawallet.github.io/massapay/screenshots/1.png">
+
+    <title>MassaPay - Secure Massa Blockchain Wallet</title>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --secondary: #10b981;
+            --dark: #111827;
+            --gray: #6b7280;
+            --light: #f9fafb;
+            --white: #ffffff;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: var(--dark);
+            background: var(--white);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Header */
+        header {
+            background: var(--white);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 0;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: var(--dark);
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--primary);
+        }
+
+        /* Hero Section */
+        .hero {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: var(--white);
+            padding: 6rem 0;
+            text-align: center;
+        }
+
+        .hero h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            font-weight: 800;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 0.75rem 2rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: var(--white);
+            color: var(--primary);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--white);
+            border: 2px solid var(--white);
+        }
+
+        .btn-secondary:hover {
+            background: var(--white);
+            color: var(--primary);
+        }
+
+        /* Features Section */
+        .features {
+            padding: 5rem 0;
+            background: var(--light);
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 3rem;
+            color: var(--dark);
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .feature-card {
+            background: var(--white);
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .feature-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .feature-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+            color: var(--primary);
+        }
+
+        /* Screenshots */
+        .screenshots {
+            padding: 5rem 0;
+        }
+
+        .screenshot-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .screenshot-grid img {
+            width: 100%;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s;
+        }
+
+        .screenshot-grid img:hover {
+            transform: scale(1.05);
+        }
+
+        /* Download Section */
+        .download {
+            background: var(--primary);
+            color: var(--white);
+            padding: 5rem 0;
+            text-align: center;
+        }
+
+        .download h2 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .download p {
+            font-size: 1.125rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+
+        /* Footer */
+        footer {
+            background: var(--dark);
+            color: var(--white);
+            padding: 3rem 0 1rem;
+        }
+
+        .footer-content {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .footer-section h3 {
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+
+        .footer-section ul {
+            list-style: none;
+        }
+
+        .footer-section ul li {
+            margin-bottom: 0.5rem;
+        }
+
+        .footer-section a {
+            color: var(--white);
+            text-decoration: none;
+            opacity: 0.8;
+            transition: opacity 0.3s;
+        }
+
+        .footer-section a:hover {
+            opacity: 1;
+        }
+
+        .footer-bottom {
+            text-align: center;
+            padding-top: 2rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            opacity: 0.6;
+        }
+
+        /* Security Badge */
+        .security-badges {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-top: 2rem;
+        }
+
+        .badge {
+            background: rgba(255,255,255,0.1);
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2rem;
+            }
+
+            .nav-links {
+                gap: 1rem;
+            }
+
+            .section-title {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <nav class="container">
+            <div class="logo">🔐 MassaPay</div>
+            <ul class="nav-links">
+                <li><a href="#features">Features</a></li>
+                <li><a href="#screenshots">Screenshots</a></li>
+                <li><a href="#download">Download</a></li>
+                <li><a href="https://github.com/massawallet/massapay" target="_blank">GitHub</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <h1>Your Keys. Your Crypto. Your Freedom.</h1>
+            <p>Secure self-custodial wallet for Massa blockchain with bank-level encryption</p>
+            <div class="cta-buttons">
+                <a href="https://github.com/massawallet/massapay/releases/latest" class="btn btn-primary">Download APK</a>
+                <a href="https://github.com/massawallet/massapay" class="btn btn-secondary">View on GitHub</a>
+            </div>
+            <div class="security-badges">
+                <span class="badge">🔒 AES-256 Encryption</span>
+                <span class="badge">🔐 Self-Custodial</span>
+                <span class="badge">🚫 No Data Collection</span>
+                <span class="badge">📱 Biometric Auth</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <h2 class="section-title">Why Choose MassaPay?</h2>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🔐</div>
+                    <h3>Self-Custodial</h3>
+                    <p>You own your keys, you own your crypto. No third parties, no central servers. Complete control over your assets.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🛡️</div>
+                    <h3>Bank-Level Security</h3>
+                    <p>AES-256-GCM encryption, Android Keystore integration, and biometric authentication protect your funds.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🚫</div>
+                    <h3>Zero Tracking</h3>
+                    <p>No data collection, no analytics, no registration. Your privacy is our priority.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Fast & Easy</h3>
+                    <p>Send and receive MAS in seconds with QR code support and intuitive interface.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Price Tracking</h3>
+                    <p>Real-time price updates in USD and EUR. Track your portfolio value effortlessly.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🌐</div>
+                    <h3>Open Source</h3>
+                    <p>Fully auditable code on GitHub. Community-driven development and transparency.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Screenshots Section -->
+    <section id="screenshots" class="screenshots">
+        <div class="container">
+            <h2 class="section-title">App Screenshots</h2>
+            <div class="screenshot-grid">
+                <img src="screenshots/1.png" alt="Wallet Dashboard">
+                <img src="screenshots/2.png" alt="Send Transaction">
+                <img src="screenshots/3.png" alt="Receive">
+                <img src="screenshots/4.png" alt="Settings">
+                <img src="screenshots/5.png" alt="Security">
+            </div>
+        </div>
+    </section>
+
+    <!-- Download Section -->
+    <section id="download" class="download">
+        <div class="container">
+            <h2>Ready to Get Started?</h2>
+            <p>Download MassaPay and take control of your Massa assets today</p>
+            <div class="cta-buttons">
+                <a href="https://github.com/massawallet/massapay/releases/latest/download/MassaPay-v1.0.0.apk" class="btn btn-primary">Download APK (39 MB)</a>
+                <a href="PRIVACY_POLICY_EN.html" class="btn btn-secondary">Privacy Policy</a>
+            </div>
+            <p style="margin-top: 2rem; font-size: 0.875rem; opacity: 0.8;">
+                ⚠️ Always backup your seed phrase. We cannot recover lost wallets.
+            </p>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3>MassaPay</h3>
+                    <p>Secure self-custodial wallet for Massa blockchain. Built with privacy and security as core principles.</p>
+                </div>
+                <div class="footer-section">
+                    <h3>Resources</h3>
+                    <ul>
+                        <li><a href="https://github.com/massawallet/massapay">GitHub Repository</a></li>
+                        <li><a href="https://github.com/massawallet/massapay/releases">Releases</a></li>
+                        <li><a href="https://github.com/massawallet/massapay/issues">Report Bug</a></li>
+                        <li><a href="README.html">Documentation</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h3>Legal</h3>
+                    <ul>
+                        <li><a href="PRIVACY_POLICY_EN.html">Privacy Policy (EN)</a></li>
+                        <li><a href="PRIVACY_POLICY.html">Política de Privacidad (ES)</a></li>
+                        <li><a href="https://github.com/massawallet/massapay/blob/main/LICENSE">License (MIT)</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h3>Community</h3>
+                    <ul>
+                        <li><a href="https://massa.net" target="_blank">Massa Network</a></li>
+                        <li><a href="https://github.com/massawallet/massapay/discussions">Discussions</a></li>
+                        <li>Email: massawallet@gmail.com</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 MassaPay. Made with ❤️ for the Massa community. Open Source under MIT License.</p>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
