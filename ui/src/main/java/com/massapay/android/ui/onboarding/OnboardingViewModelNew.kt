@@ -18,7 +18,8 @@ class OnboardingViewModelNew @Inject constructor(
     private val mnemonicManager: MnemonicManager,
     private val walletManager: WalletManager,
     private val secureStorage: SecureStorage,
-    private val keystoreManager: KeystoreManager
+    private val keystoreManager: KeystoreManager,
+    private val accountManager: com.massapay.android.security.wallet.AccountManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(OnboardingStateNew())
@@ -121,6 +122,13 @@ class OnboardingViewModelNew @Inject constructor(
                     // Standard mnemonic import/generation
                     val mnemonicString = seedWords.joinToString(" ")
                     
+                    // DEBUG: Log exact mnemonic being used
+                    android.util.Log.d("Onboarding", "=== MNEMONIC IMPORT DEBUG ===")
+                    android.util.Log.d("Onboarding", "Mnemonic word count: ${seedWords.size}")
+                    android.util.Log.d("Onboarding", "Mnemonic first 3 words: ${seedWords.take(3)}")
+                    android.util.Log.d("Onboarding", "Mnemonic length: ${mnemonicString.length}")
+                    android.util.Log.d("Onboarding", "Mnemonic SHA256: ${java.security.MessageDigest.getInstance("SHA-256").digest(mnemonicString.toByteArray()).take(8).joinToString("") { "%02x".format(it) }}")
+                    
                     // Store mnemonic
                     secureStorage.storeMnemonic("default_wallet", mnemonicString)
                     
@@ -131,6 +139,11 @@ class OnboardingViewModelNew @Inject constructor(
                         accountIndex = 0,
                         addressIndex = 0
                     )
+                    
+                    android.util.Log.d("Onboarding", "Derived address: ${massaAddress.address}")
+                    android.util.Log.d("Onboarding", "Derived public key: ${massaAddress.publicKey}")
+                    android.util.Log.d("Onboarding", "=== END DEBUG ===")
+                    
                     massaAddress.address
                 }
                 
@@ -138,6 +151,18 @@ class OnboardingViewModelNew @Inject constructor(
                 
                 // Mark onboarding as completed
                 secureStorage.setOnboardingCompleted(true)
+                
+                // CRITICAL: Clear old accounts before initializing new ones
+                // This fixes the bug where old addresses were shown after importing a new seed
+                try {
+                    android.util.Log.d("Onboarding", "Clearing old accounts before init...")
+                    accountManager.clearAllAccounts()
+                    android.util.Log.d("Onboarding", "Initializing account with address: $address")
+                    accountManager.initializeFromExistingWallet()
+                    android.util.Log.d("Onboarding", "Account initialized successfully")
+                } catch (e: Exception) {
+                    android.util.Log.e("Onboarding", "Failed to init default account", e)
+                }
                 
                 _uiState.update {
                     it.copy(

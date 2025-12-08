@@ -4,4 +4,11 @@ import android.app.Application
 import dagger.hilt.android.HiltAndroidApp
 
 @HiltAndroidApp
-class MassaPayApplication : Application()
+class MassaPayApplication : Application() {
+    
+    override fun onCreate() {
+        super.onCreate()
+        // WalletConnect is initialized via Hilt DI in UiModule
+        android.util.Log.d("MassaPayApp", "Application created")
+    }
+}

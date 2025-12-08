@@ -304,17 +304,20 @@ private fun MassaAnimatedLogo() {
             modifier = Modifier.size(170.dp),
             contentAlignment = Alignment.Center
         ) {
-            // Round logo, no purple border
+            // Round logo container
             Box(
                 modifier = Modifier
-                    .size(140.dp)
+                    .size(150.dp)
                     .graphicsLayer(scaleX = pulse, scaleY = pulse)
-                    .clip(CircleShape)
+                    .clip(CircleShape),
+                contentAlignment = Alignment.Center
             ) {
+                // Image much larger than container to fill circle completely
+                // Need ~1.42x (sqrt(2)) to cover corners of a square inscribed in circle
                 Image(
                     painter = androidx.compose.ui.res.painterResource(com.massapay.android.ui.R.drawable.massa_logo_brand),
                     contentDescription = "Massa Logo",
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.size(215.dp), // 150 * 1.42 ≈ 213
                     contentScale = ContentScale.Crop
                 )
             }

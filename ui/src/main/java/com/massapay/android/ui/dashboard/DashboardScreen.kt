@@ -10,6 +10,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,6 +29,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.massapay.android.core.model.Transaction
 import com.massapay.android.core.model.TransactionStatus
@@ -44,10 +47,22 @@ fun DashboardScreen(
     onQrScanClick: () -> Unit = {},
     onNftClick: () -> Unit = {},
     onChartsClick: () -> Unit = {},
+    onAccountsClick: () -> Unit = {},
+    onStakingClick: () -> Unit = {},
+    onSwapClick: () -> Unit = {},
+    onDAppBrowserClick: () -> Unit = {},
+    onPortfolioClick: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(0) }
+    
+    // Parse account color from hex
+    val accountColor = try {
+        Color(android.graphics.Color.parseColor(uiState.activeAccountColor))
+    } catch (e: Exception) {
+        Color(0xFF2196F3)
+    }
     
     // Use MaterialTheme colors for consistent theming
     val backgroundColor = MaterialTheme.colorScheme.background
@@ -76,17 +91,95 @@ fun DashboardScreen(
         label = "shimmerAlpha"
     )
 
+    val clipboardManager = LocalClipboardManager.current
+    var showCopiedToast by remember { mutableStateOf(false) }
+    
+    // Show copied toast
+    LaunchedEffect(showCopiedToast) {
+        if (showCopiedToast) {
+            kotlinx.coroutines.delay(1500)
+            showCopiedToast = false
+        }
+    }
+    
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { 
-                    Text(
-                        "Massa Pay",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                        ),
-                        color = textPrimary
-                    ) 
+                    Column {
+                        Text(
+                            "Massa Pay",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                            ),
+                            color = textPrimary
+                        )
+                        // Account indicator with address - clickable to switch accounts
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(onClick = onAccountsClick)
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(accountColor)
+                            )
+                            Text(
+                                text = uiState.activeAccountName,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = textSecondary
+                            )
+                            // Wallet address inline
+                            uiState.activeWallet?.let { wallet ->
+                                Text(
+                                    text = "•",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = textSecondary.copy(alpha = 0.5f)
+                                )
+                                Text(
+                                    text = "${wallet.take(6)}...${wallet.takeLast(4)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = textSecondary.copy(alpha = 0.7f)
+                                )
+                                // Copy button
+                                Box(
+                                    modifier = Modifier
+                                        .size(18.dp)
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            clipboardManager.setText(AnnotatedString(wallet))
+                                            showCopiedToast = true
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (showCopiedToast) Icons.Default.Check else Icons.Default.ContentCopy,
+                                        contentDescription = "Copy",
+                                        modifier = Modifier.size(12.dp),
+                                        tint = if (showCopiedToast) Color(0xFF4CAF50) else textSecondary.copy(alpha = 0.5f)
+                                    )
+                                }
+                            }
+                            if (uiState.accountCount > 1) {
+                                Text(
+                                    text = "(${uiState.accountCount})",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = textSecondary.copy(alpha = 0.5f)
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Filled.KeyboardArrowDown,
+                                contentDescription = "Switch Account",
+                                tint = textSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = backgroundColor,
@@ -104,61 +197,69 @@ fun DashboardScreen(
             )
         },
         bottomBar = {
-            Row(
+            // Modern bottom navigation with 5 items
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
                     .navigationBarsPadding(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+                color = if (isDarkTheme) Color(0xFF0D0D15) else Color.White,
+                shadowElevation = 8.dp
             ) {
-                FlatNavItem(
-                    icon = LucideIcons.House,
-                    label = "Home",
-                    isSelected = selectedTab == 0,
-                    isDarkTheme = isDarkTheme,
-                    onClick = { selectedTab = 0 }
-                )
-                FlatNavItem(
-                    icon = LucideIcons.Image,
-                    label = "NFT",
-                    isSelected = selectedTab == 1,
-                    isDarkTheme = isDarkTheme,
-                    onClick = { 
-                        selectedTab = 1
-                        onNftClick()
-                    }
-                )
-                FlatNavItem(
-                    icon = LucideIcons.SendHorizontal,
-                    label = "Send",
-                    isSelected = selectedTab == 2,
-                    isDarkTheme = isDarkTheme,
-                    onClick = { 
-                        selectedTab = 2
-                        onSendClick()
-                    }
-                )
-                FlatNavItem(
-                    icon = LucideIcons.QrCode,
-                    label = "Receive",
-                    isSelected = selectedTab == 3,
-                    isDarkTheme = isDarkTheme,
-                    onClick = { 
-                        selectedTab = 3
-                        onReceiveClick()
-                    }
-                )
-                FlatNavItem(
-                    icon = LucideIcons.Settings,
-                    label = "Settings",
-                    isSelected = selectedTab == 4,
-                    isDarkTheme = isDarkTheme,
-                    onClick = { 
-                        selectedTab = 4
-                        onSettingsClick()
-                    }
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ModernNavItem(
+                        icon = LucideIcons.House,
+                        label = "Home",
+                        isSelected = selectedTab == 0,
+                        isDarkTheme = isDarkTheme,
+                        onClick = { selectedTab = 0 }
+                    )
+                    ModernNavItem(
+                        icon = LucideIcons.Image,
+                        label = "NFT",
+                        isSelected = selectedTab == 1,
+                        isDarkTheme = isDarkTheme,
+                        onClick = { 
+                            selectedTab = 1
+                            onNftClick()
+                        }
+                    )
+                    ModernNavItem(
+                        icon = LucideIcons.Globe,
+                        label = "DApps",
+                        isSelected = selectedTab == 2,
+                        isDarkTheme = isDarkTheme,
+                        onClick = { 
+                            selectedTab = 2
+                            onDAppBrowserClick()
+                        }
+                    )
+                    ModernNavItem(
+                        icon = LucideIcons.SendHorizontal,
+                        label = "Send",
+                        isSelected = selectedTab == 3,
+                        isDarkTheme = isDarkTheme,
+                        onClick = { 
+                            selectedTab = 3
+                            onSendClick()
+                        }
+                    )
+                    ModernNavItem(
+                        icon = LucideIcons.Settings,
+                        label = "Settings",
+                        isSelected = selectedTab == 4,
+                        isDarkTheme = isDarkTheme,
+                        onClick = { 
+                            selectedTab = 4
+                            onSettingsClick()
+                        }
+                    )
+                }
             }
         },
         containerColor = backgroundColor,
@@ -181,6 +282,7 @@ fun DashboardScreen(
                     Web3BalanceCard(
                         balance = uiState.balance.toDoubleOrNull() ?: 0.0,
                         usdValue = uiState.usdValue.toDoubleOrNull() ?: 0.0,
+                        totalPortfolioValue = uiState.totalPortfolioValue.toDouble(),
                         currentPrice = uiState.currentPrice,
                         priceChange24h = uiState.priceChange24h,
                         isLoading = uiState.isLoading,
@@ -190,34 +292,63 @@ fun DashboardScreen(
                         textSecondary = textSecondary,
                         accentColor = web3Cyan,
                         onChartsClick = onChartsClick,
+                        onPortfolioClick = onPortfolioClick,
                         massaStats = uiState.massaStats
                     )
                 }
 
-                // Send & Receive Buttons
+                // Quick Actions Grid (2x2)
                 item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Web3ActionButton(
-                            icon = Icons.Outlined.ArrowUpward,
-                            label = "Send",
-                            onClick = onSendClick,
-                            color = web3Purple,
-                            cardBackground = cardBackground,
-                            textColor = textPrimary,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Web3ActionButton(
-                            icon = Icons.Outlined.ArrowDownward,
-                            label = "Receive",
-                            onClick = onReceiveClick,
-                            color = web3Cyan,
-                            cardBackground = cardBackground,
-                            textColor = textPrimary,
-                            modifier = Modifier.weight(1f)
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            QuickActionCard(
+                                icon = Icons.Outlined.ArrowUpward,
+                                label = "Send",
+                                onClick = onSendClick,
+                                color = web3Purple,
+                                cardBackground = cardBackground,
+                                textColor = textPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            QuickActionCard(
+                                icon = Icons.Outlined.ArrowDownward,
+                                label = "Receive",
+                                onClick = onReceiveClick,
+                                color = web3Cyan,
+                                cardBackground = cardBackground,
+                                textColor = textPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            QuickActionCard(
+                                icon = Icons.Outlined.Layers,
+                                label = "Staking",
+                                onClick = onStakingClick,
+                                color = web3Green,
+                                cardBackground = cardBackground,
+                                textColor = textPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            QuickActionCard(
+                                icon = Icons.Outlined.SwapHoriz,
+                                label = "Swap",
+                                onClick = onSwapClick,
+                                color = Color(0xFFFF9800),
+                                cardBackground = cardBackground,
+                                textColor = textPrimary,
+                                modifier = Modifier.weight(1f),
+                                enabled = true
+                            )
+                        }
                     }
                 }
 
@@ -253,10 +384,10 @@ fun DashboardScreen(
                         Web3EmptyState(web3Purple, cardBackground, textPrimary, textSecondary)
                     }
                 } else {
-                    items(
+                    itemsIndexed(
                         items = uiState.recentTransactions,
-                        key = { it.hash }
-                    ) { transaction ->
+                        key = { index, tx -> "${tx.hash}_$index" }
+                    ) { _, transaction ->
                         Web3TransactionItem(
                             transaction = transaction,
                             walletAddress = uiState.activeWallet ?: "",
@@ -278,6 +409,7 @@ fun DashboardScreen(
 private fun Web3BalanceCard(
     balance: Double,
     usdValue: Double,
+    totalPortfolioValue: Double,
     currentPrice: Double,
     priceChange24h: Double,
     isLoading: Boolean,
@@ -287,8 +419,12 @@ private fun Web3BalanceCard(
     textSecondary: Color,
     accentColor: Color,
     onChartsClick: () -> Unit,
+    onPortfolioClick: () -> Unit,
     massaStats: com.massapay.android.price.model.MassaStats?
 ) {
+    // Use totalPortfolioValue if available, otherwise fall back to MAS-only value
+    val displayUsdValue = if (totalPortfolioValue > 0) totalPortfolioValue else usdValue
+    
     Card(
         modifier = Modifier
             .fillMaxWidth(),
@@ -318,11 +454,11 @@ private fun Web3BalanceCard(
                         color = textSecondary
                     )
                     
-                    // View Charts Button
+                    // View Charts Button only
                     IconButton(
                         onClick = onChartsClick,
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(36.dp)
                             .background(
                                 color = MaterialTheme.colorScheme.primaryContainer,
                                 shape = androidx.compose.foundation.shape.CircleShape
@@ -332,12 +468,12 @@ private fun Web3BalanceCard(
                             Icons.Default.TrendingUp,
                             contentDescription = "View Charts",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
                 
-                // Balance in USD
+                // Balance in USD (Total Portfolio Value)
                 if (isLoading) {
                     Box(
                         modifier = Modifier
@@ -350,7 +486,7 @@ private fun Web3BalanceCard(
                     )
                 } else {
                     Text(
-                        "$${String.format("%.2f", usdValue)}",
+                        "$${String.format("%.2f", displayUsdValue)}",
                         style = MaterialTheme.typography.displaySmall.copy(
                             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                             fontSize = 42.sp
@@ -359,7 +495,7 @@ private fun Web3BalanceCard(
                     )
                 }
                 
-                // MAS Balance
+                // MAS Balance with Portfolio button next to it
                 if (isLoading) {
                     Box(
                         modifier = Modifier
@@ -371,13 +507,45 @@ private fun Web3BalanceCard(
                             )
                     )
                 } else {
-                    Text(
-                        "${String.format("%.4f", balance)} MAS",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                        ),
-                        color = textPrimary
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "${String.format("%.4f", balance)} MAS",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                            ),
+                            color = textPrimary
+                        )
+                        
+                        // Portfolio Button - next to MAS balance
+                        Surface(
+                            onClick = onPortfolioClick,
+                            modifier = Modifier.height(28.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.AccountBalanceWallet,
+                                    contentDescription = "Portfolio",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    "Portfolio",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
                 }
                 
                 Divider(color = textSecondary.copy(alpha = 0.1f))
@@ -531,6 +699,80 @@ private fun Web3ActionButton(
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
                     ),
                     color = textColor
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QuickActionCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    color: Color,
+    cardBackground: Color,
+    textColor: Color,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    val actualColor = if (enabled) color else color.copy(alpha = 0.4f)
+    val actualTextColor = if (enabled) textColor else textColor.copy(alpha = 0.4f)
+    
+    Card(
+        onClick = { if (enabled) onClick() },
+        modifier = modifier.height(72.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = cardBackground
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            actualColor.copy(alpha = 0.08f),
+                            actualColor.copy(alpha = 0.02f)
+                        )
+                    )
+                )
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(
+                color = actualColor.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = label,
+                        tint = actualColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+            Text(
+                label,
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                ),
+                color = actualTextColor
+            )
+            if (!enabled) {
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    "Soon",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = actualColor.copy(alpha = 0.6f)
                 )
             }
         }
@@ -1468,6 +1710,54 @@ private fun FlatNavItem(
                     androidx.compose.ui.text.font.FontWeight.Normal
             ),
             color = if (isDarkTheme) Color.White else Color.Black,
+            maxLines = 1,
+            fontSize = 11.sp
+        )
+    }
+}
+
+@Composable
+private fun ModernNavItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    isSelected: Boolean,
+    isDarkTheme: Boolean,
+    onClick: () -> Unit
+) {
+    val accentColor = Color(0xFF6366F1)
+    val selectedBg = if (isDarkTheme) accentColor.copy(alpha = 0.15f) else accentColor.copy(alpha = 0.1f)
+    val unselectedColor = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.6f)
+    
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(
+                onClick = onClick,
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() }
+            )
+            .then(
+                if (isSelected) Modifier.background(selectedBg) else Modifier
+            )
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = if (isSelected) accentColor else unselectedColor,
+            modifier = Modifier.size(24.dp)
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = if (isSelected) 
+                    androidx.compose.ui.text.font.FontWeight.SemiBold 
+                else 
+                    androidx.compose.ui.text.font.FontWeight.Normal
+            ),
+            color = if (isSelected) accentColor else unselectedColor,
             maxLines = 1,
             fontSize = 11.sp
         )

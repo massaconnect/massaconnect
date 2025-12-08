@@ -20,7 +20,8 @@ class SendViewModel @Inject constructor(
     private val massaRepository: MassaRepository,
     private val priceRepository: PriceRepository,
     private val secureStorage: SecureStorage,
-    private val walletManager: WalletManager
+    private val walletManager: WalletManager,
+    private val accountManager: com.massapay.android.security.wallet.AccountManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SendState())
@@ -42,8 +43,10 @@ class SendViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             try {
-                // Get current wallet balance
-                val address = secureStorage.getActiveWallet()
+                // Get current wallet balance from AccountManager or SecureStorage
+                val activeAccount = accountManager.activeAccount.value
+                val address = activeAccount?.address ?: secureStorage.getActiveWallet()
+                
                 address?.let { loadBalance(it) }
 
                 // Start USD price updates
@@ -192,26 +195,37 @@ class SendViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             
-            val fromAddress = secureStorage.getActiveWallet() ?: return@launch
+            val activeAccount = accountManager.activeAccount.value
+            val fromAddress = activeAccount?.address ?: secureStorage.getActiveWallet() ?: return@launch
             
-            // Get the mnemonic to derive keys
-            val mnemonic = secureStorage.getMnemonic("default_wallet")
-            if (mnemonic == null) {
+            // Get private key from AccountManager
+            val privateKeyBytes = if (activeAccount != null) {
+                accountManager.getPrivateKeyForAccount(activeAccount.id)
+            } else {
+                // Fallback for legacy single account
+                val mnemonic = secureStorage.getMnemonic("default_wallet")
+                if (mnemonic != null) {
+                    walletManager.getPrivateKey(mnemonic)
+                } else {
+                    null
+                }
+            }
+
+            if (privateKeyBytes == null) {
                 _uiState.update { it.copy(
-                    error = "No wallet found",
+                    error = "Could not retrieve private key",
                     isLoading = false,
                     showFailureScreen = true
                 ) }
                 return@launch
             }
             
-            // Derive the address to get public key
-            val address = walletManager.deriveAddress(mnemonic)
-            val publicKey = address.publicKey
-            
-            // Get private key bytes and convert to hex
-            val privateKeyBytes = walletManager.getPrivateKey(mnemonic)
             val privateKey = privateKeyBytes.joinToString("") { "%02x".format(it) }
+            
+            // Derive public key using WalletManager (assuming same curve Ed25519)
+            // We use WalletManager here as a utility since AccountManager doesn't expose public key directly yet
+            val publicKeyBytes = walletManager.derivePublicKey(privateKeyBytes)
+            val publicKey = walletManager.encodePublicKeyP1(publicKeyBytes)
             
             val sendRes = massaRepository.sendTransaction(
                 from = fromAddress,

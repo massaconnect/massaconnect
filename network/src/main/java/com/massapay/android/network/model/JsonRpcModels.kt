@@ -40,7 +40,20 @@ data class AddressResponse(
     @SerializedName("candidate_balance")
     val candidateBalance: String?,
     @SerializedName("balance") 
-    val balance: String?
+    val balance: String?,
+    @SerializedName("final_roll_count")
+    val finalRollCount: Int?,
+    @SerializedName("candidate_roll_count")
+    val candidateRollCount: Int?,
+    @SerializedName("deferred_credits")
+    val deferredCredits: List<DeferredCredit>?
+)
+
+data class DeferredCredit(
+    @SerializedName("slot")
+    val slot: SlotInfo?,
+    @SerializedName("amount")
+    val amount: String?
 )
 
 data class NetworkStatusResponse(

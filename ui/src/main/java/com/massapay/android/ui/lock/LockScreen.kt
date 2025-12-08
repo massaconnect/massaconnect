@@ -124,6 +124,7 @@ fun LockScreen(
                             elevation = 8.dp,
                             shape = CircleShape
                         )
+                        .clip(CircleShape)
                         .background(
                             color = Color.Black,
                             shape = CircleShape
@@ -135,10 +136,12 @@ fun LockScreen(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
+                    // Image larger than container to fill circle completely
                     androidx.compose.foundation.Image(
                         painter = painterResource(id = com.massapay.android.ui.R.drawable.massapay_logo),
                         contentDescription = "MassaPay Logo",
-                        modifier = Modifier.size(110.dp)
+                        modifier = Modifier.size(170.dp), // ~1.42x container to cover circle
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
                     )
                 }
 

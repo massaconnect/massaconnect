@@ -28,6 +28,37 @@ class MassaRepository @Inject constructor(
     
     companion object {
         private const val PREF_KEY_PREFIX = "transactions_"
+        private const val NANO_MAS_DECIMALS = 9 // 1 MAS = 10^9 nanoMAS
+    }
+    
+    /**
+     * Convert nanoMAS to MAS for display
+     * 
+     * DApps like EagleFi send values in nanoMAS (1 MAS = 10^9 nanoMAS)
+     * We detect this by checking if the value is unreasonably large for MAS
+     * 
+     * Examples:
+     * - 100000000 nanoMAS = 0.1 MAS
+     * - 1000000000 nanoMAS = 1 MAS  
+     * - 133000000000 nanoMAS = 133 MAS
+     * 
+     * Threshold: If value > 10000 (assuming no one sends more than 10K MAS in a single tx),
+     * then it's likely in nanoMAS
+     */
+    private fun normalizeAmountForDisplay(amount: String): String {
+        return try {
+            val value = amount.toBigDecimalOrNull() ?: return amount
+            // If value is greater than 10000, it's likely in nanoMAS
+            // 10000 MAS would be 10000000000000 nanoMAS, so this is a safe threshold
+            if (value > java.math.BigDecimal("10000")) {
+                val masValue = value.divide(java.math.BigDecimal("1000000000"))
+                masValue.stripTrailingZeros().toPlainString()
+            } else {
+                amount
+            }
+        } catch (e: Exception) {
+            amount
+        }
     }
     suspend fun getAddressBalance(address: String): Result<String> {
         return try {
@@ -108,7 +139,12 @@ class MassaRepository @Inject constructor(
             android.util.Log.d("MassaRepository", "1. Operation serialized [spec] (${operationBytes.size} bytes): ${operationBytes.joinToString("") { "%02x".format(it) }}")
 
             // 2. Derive public key from private key
-            val privateKeyBytes = privateKey.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            // Support both hex format and S1 (base58) format
+            val privateKeyBytes = if (privateKey.startsWith("S")) {
+                decodeBase58PrivateKey(privateKey)
+            } else {
+                privateKey.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            }
             val privateKeyParams = Ed25519PrivateKeyParameters(privateKeyBytes, 0)
             val publicKeyRaw = privateKeyParams.generatePublicKey().encoded
             val publicKeyBase58 = encodePublicKeyBase58(publicKeyRaw)
@@ -226,6 +262,834 @@ class MassaRepository @Inject constructor(
             android.util.Log.e("MassaRepository", "Transaction exception: ${e.message}", e)
             Result.Error(e)
         }
+    }
+
+    /**
+     * Call a smart contract (execute a function on a contract)
+     * Used for DeFi operations like swaps, staking, etc.
+     * 
+     * Operation type 4 = CALL_SC in Massa protocol
+     */
+    suspend fun callSmartContract(
+        from: String,
+        targetAddress: String,
+        functionName: String,
+        parameter: String?,
+        coins: String,
+        fee: String,
+        maxGas: String?,
+        privateKey: String,
+        publicKey: String
+    ): Result<String> {
+        return try {
+            android.util.Log.d("MassaRepository", "=== Starting Smart Contract Call ===")
+            android.util.Log.d("MassaRepository", "From: $from, Target: $targetAddress, Function: $functionName")
+            android.util.Log.d("MassaRepository", "Coins: $coins, Fee: $fee, MaxGas: $maxGas")
+            
+            // Get network status for chain ID and expiration period
+            val statusRequest = JsonRpcRequest(
+                method = "get_status",
+                params = emptyList<Any>()
+            )
+            val statusResponse = massaApi.getStatus(statusRequest)
+            statusResponse.error?.let {
+                android.util.Log.e("MassaRepository", "Status error: ${it.message}")
+                return Result.Error(Exception("Failed to fetch network status: ${it.message}"))
+            }
+
+            val chainId = statusResponse.result?.chainId?.toLongOrNull()
+                ?: return Result.Error(Exception("Network status missing chain id"))
+
+            val nextPeriod = statusResponse.result?.nextSlot?.period
+            val expirePeriod = nextPeriod?.plus(10)
+                ?: return Result.Error(Exception("Network status missing slot information"))
+
+            android.util.Log.d("MassaRepository", "ChainId: $chainId, ExpirePeriod: $expirePeriod")
+
+            // Serialize the CallSC operation
+            val operationBytes = serializeCallSCOperation(
+                expirePeriod = expirePeriod,
+                fee = fee,
+                targetAddress = targetAddress,
+                functionName = functionName,
+                parameter = parameter,
+                coins = coins,
+                maxGas = maxGas ?: "100000000" // Default 100M gas
+            )
+            android.util.Log.d("MassaRepository", "CallSC serialized (${operationBytes.size} bytes)")
+
+            // Derive public key from private key
+            // Support both hex format and S1 (base58) format
+            val privateKeyBytes = if (privateKey.startsWith("S")) {
+                decodeBase58PrivateKey(privateKey)
+            } else {
+                privateKey.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            }
+            val privateKeyParams = Ed25519PrivateKeyParameters(privateKeyBytes, 0)
+            val publicKeyRaw = privateKeyParams.generatePublicKey().encoded
+            val publicKeyBase58 = encodePublicKeyBase58(publicKeyRaw)
+            android.util.Log.d("MassaRepository", "Public key derived: $publicKeyBase58")
+
+            // Build message to hash: chainId (u64 BE) + publicKey (versioned) + serialized_content
+            val chainIdBytesBE = java.nio.ByteBuffer.allocate(8)
+                .order(java.nio.ByteOrder.BIG_ENDIAN)
+                .putLong(chainId)
+                .array()
+
+            // Create versioned public key: version (1 byte) + raw key (32 bytes)
+            val publicKeyVersioned = ByteArray(33)
+            publicKeyVersioned[0] = 0  // Version 0
+            System.arraycopy(publicKeyRaw, 0, publicKeyVersioned, 1, 32)
+
+            val messageToHash = java.io.ByteArrayOutputStream()
+            messageToHash.write(chainIdBytesBE)
+            messageToHash.write(publicKeyVersioned)
+            messageToHash.write(operationBytes)
+            val fullMessage = messageToHash.toByteArray()
+
+            // Hash and sign
+            val blake3Hash = hashWithBlake3(fullMessage)
+            android.util.Log.d("MassaRepository", "BLAKE3 hash computed")
+
+            val signer = Ed25519Signer()
+            signer.init(true, privateKeyParams)
+            signer.update(blake3Hash, 0, blake3Hash.size)
+            val signature = signer.generateSignature()
+            android.util.Log.d("MassaRepository", "Signature generated")
+
+            val signatureBase58 = encodeSignatureBase58(signature)
+            val serializedContent = operationBytes.map { it.toInt() and 0xFF }
+
+            val operation = mapOf(
+                "creator_public_key" to publicKeyBase58,
+                "signature" to signatureBase58,
+                "serialized_content" to serializedContent
+            )
+
+            android.util.Log.d("MassaRepository", "Sending CallSC operation to Massa node...")
+
+            val request = JsonRpcRequest(
+                method = "send_operations",
+                params = listOf(listOf(operation))
+            )
+            val response = massaApi.sendOperation(request)
+
+            android.util.Log.d("MassaRepository", "Response: error=${response.error}, result=${response.result}")
+
+            response.error?.let {
+                android.util.Log.e("MassaRepository", "CallSC error: ${it.message}")
+                return Result.Error(Exception(it.message))
+            }
+            
+            response.result?.let { operationIds ->
+                val operationId = operationIds.firstOrNull() ?: return Result.Error(Exception("No operation ID returned"))
+                android.util.Log.i("MassaRepository", "✅ CallSC successful! Operation ID: $operationId")
+                
+                // Add to transaction cache (normalize amount for display)
+                val transaction = Transaction(
+                    hash = operationId,
+                    from = from,
+                    to = targetAddress,
+                    amount = normalizeAmountForDisplay(coins),
+                    token = Token(
+                        address = "",
+                        symbol = "MAS",
+                        decimals = 18,
+                        name = "Massa"
+                    ),
+                    timestamp = System.currentTimeMillis(),
+                    status = com.massapay.android.core.model.TransactionStatus.PENDING,
+                    fee = normalizeAmountForDisplay(fee)
+                )
+                addTransactionToCache(from, transaction)
+                
+                return Result.Success(operationId)
+            }
+            
+            Result.Error(Exception("Smart contract call failed"))
+        } catch (e: Exception) {
+            android.util.Log.e("MassaRepository", "CallSC exception: ${e.message}", e)
+            Result.Error(e)
+        }
+    }
+
+    /**
+     * Buy Rolls for staking
+     * Operation type 1 = RollBuy in Massa protocol
+     * 1 Roll = 100 MAS
+     */
+    suspend fun buyRolls(
+        from: String,
+        rollCount: Int,
+        fee: String,
+        privateKey: String,
+        publicKey: String
+    ): Result<String> {
+        return try {
+            android.util.Log.d("MassaRepository", "=== Starting Buy Rolls ===")
+            android.util.Log.d("MassaRepository", "From: $from, RollCount: $rollCount, Fee: $fee")
+
+            // Get network status for chain ID and expiration period
+            val statusRequest = JsonRpcRequest(
+                method = "get_status",
+                params = emptyList<Any>()
+            )
+            val statusResponse = massaApi.getStatus(statusRequest)
+            statusResponse.error?.let {
+                android.util.Log.e("MassaRepository", "Status error: ${it.message}")
+                return Result.Error(Exception("Failed to fetch network status: ${it.message}"))
+            }
+
+            val chainId = statusResponse.result?.chainId?.toLongOrNull()
+                ?: return Result.Error(Exception("Network status missing chain id"))
+
+            val nextPeriod = statusResponse.result?.nextSlot?.period
+            val expirePeriod = nextPeriod?.plus(10)
+                ?: return Result.Error(Exception("Network status missing slot information"))
+
+            android.util.Log.d("MassaRepository", "ChainId: $chainId, ExpirePeriod: $expirePeriod")
+
+            // Serialize the RollBuy operation
+            val operationBytes = serializeRollBuyOperation(
+                expirePeriod = expirePeriod,
+                fee = fee,
+                rollCount = rollCount
+            )
+            android.util.Log.d("MassaRepository", "RollBuy serialized (${operationBytes.size} bytes)")
+
+            // Derive public key from private key
+            val privateKeyBytes = if (privateKey.startsWith("S")) {
+                decodeBase58PrivateKey(privateKey)
+            } else {
+                privateKey.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            }
+            val privateKeyParams = Ed25519PrivateKeyParameters(privateKeyBytes, 0)
+            val publicKeyRaw = privateKeyParams.generatePublicKey().encoded
+            val publicKeyBase58 = encodePublicKeyBase58(publicKeyRaw)
+            android.util.Log.d("MassaRepository", "Public key derived: $publicKeyBase58")
+
+            // Build message to hash: chainId (u64 BE) + publicKey (versioned) + serialized_content
+            val chainIdBytesBE = java.nio.ByteBuffer.allocate(8)
+                .order(java.nio.ByteOrder.BIG_ENDIAN)
+                .putLong(chainId)
+                .array()
+
+            // Create versioned public key: version (1 byte) + raw key (32 bytes)
+            val publicKeyVersioned = ByteArray(33)
+            publicKeyVersioned[0] = 0  // Version 0
+            System.arraycopy(publicKeyRaw, 0, publicKeyVersioned, 1, 32)
+
+            val messageToHash = java.io.ByteArrayOutputStream()
+            messageToHash.write(chainIdBytesBE)
+            messageToHash.write(publicKeyVersioned)
+            messageToHash.write(operationBytes)
+            val fullMessage = messageToHash.toByteArray()
+
+            // Hash and sign
+            val blake3Hash = hashWithBlake3(fullMessage)
+            android.util.Log.d("MassaRepository", "BLAKE3 hash computed")
+
+            val signer = Ed25519Signer()
+            signer.init(true, privateKeyParams)
+            signer.update(blake3Hash, 0, blake3Hash.size)
+            val signature = signer.generateSignature()
+            android.util.Log.d("MassaRepository", "Signature generated")
+
+            val signatureBase58 = encodeSignatureBase58(signature)
+            val serializedContent = operationBytes.map { it.toInt() and 0xFF }
+
+            val operation = mapOf(
+                "creator_public_key" to publicKeyBase58,
+                "signature" to signatureBase58,
+                "serialized_content" to serializedContent
+            )
+
+            android.util.Log.d("MassaRepository", "Sending RollBuy operation to Massa node...")
+
+            val request = JsonRpcRequest(
+                method = "send_operations",
+                params = listOf(listOf(operation))
+            )
+            val response = massaApi.sendOperation(request)
+
+            android.util.Log.d("MassaRepository", "Response: error=${response.error}, result=${response.result}")
+
+            response.error?.let {
+                android.util.Log.e("MassaRepository", "RollBuy error: ${it.message}")
+                return Result.Error(Exception(it.message))
+            }
+
+            response.result?.let { operationIds ->
+                val operationId = operationIds.firstOrNull() ?: return Result.Error(Exception("No operation ID returned"))
+                android.util.Log.i("MassaRepository", "✅ RollBuy successful! Operation ID: $operationId")
+                return Result.Success(operationId)
+            }
+
+            Result.Error(Exception("Buy Rolls failed"))
+        } catch (e: Exception) {
+            android.util.Log.e("MassaRepository", "RollBuy exception: ${e.message}", e)
+            Result.Error(e)
+        }
+    }
+
+    /**
+     * Sell Rolls to get MAS back
+     * Operation type 2 = RollSell in Massa protocol
+     * Note: There's a delay of ~3 cycles before MAS is available (deferred credits)
+     */
+    suspend fun sellRolls(
+        from: String,
+        rollCount: Int,
+        fee: String,
+        privateKey: String,
+        publicKey: String
+    ): Result<String> {
+        return try {
+            android.util.Log.d("MassaRepository", "=== Starting Sell Rolls ===")
+            android.util.Log.d("MassaRepository", "From: $from, RollCount: $rollCount, Fee: $fee")
+
+            // Get network status for chain ID and expiration period
+            val statusRequest = JsonRpcRequest(
+                method = "get_status",
+                params = emptyList<Any>()
+            )
+            val statusResponse = massaApi.getStatus(statusRequest)
+            statusResponse.error?.let {
+                android.util.Log.e("MassaRepository", "Status error: ${it.message}")
+                return Result.Error(Exception("Failed to fetch network status: ${it.message}"))
+            }
+
+            val chainId = statusResponse.result?.chainId?.toLongOrNull()
+                ?: return Result.Error(Exception("Network status missing chain id"))
+
+            val nextPeriod = statusResponse.result?.nextSlot?.period
+            val expirePeriod = nextPeriod?.plus(10)
+                ?: return Result.Error(Exception("Network status missing slot information"))
+
+            android.util.Log.d("MassaRepository", "ChainId: $chainId, ExpirePeriod: $expirePeriod")
+
+            // Serialize the RollSell operation
+            val operationBytes = serializeRollSellOperation(
+                expirePeriod = expirePeriod,
+                fee = fee,
+                rollCount = rollCount
+            )
+            android.util.Log.d("MassaRepository", "RollSell serialized (${operationBytes.size} bytes)")
+
+            // Derive public key from private key
+            val privateKeyBytes = if (privateKey.startsWith("S")) {
+                decodeBase58PrivateKey(privateKey)
+            } else {
+                privateKey.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            }
+            val privateKeyParams = Ed25519PrivateKeyParameters(privateKeyBytes, 0)
+            val publicKeyRaw = privateKeyParams.generatePublicKey().encoded
+            val publicKeyBase58 = encodePublicKeyBase58(publicKeyRaw)
+            android.util.Log.d("MassaRepository", "Public key derived: $publicKeyBase58")
+
+            // Build message to hash: chainId (u64 BE) + publicKey (versioned) + serialized_content
+            val chainIdBytesBE = java.nio.ByteBuffer.allocate(8)
+                .order(java.nio.ByteOrder.BIG_ENDIAN)
+                .putLong(chainId)
+                .array()
+
+            // Create versioned public key: version (1 byte) + raw key (32 bytes)
+            val publicKeyVersioned = ByteArray(33)
+            publicKeyVersioned[0] = 0  // Version 0
+            System.arraycopy(publicKeyRaw, 0, publicKeyVersioned, 1, 32)
+
+            val messageToHash = java.io.ByteArrayOutputStream()
+            messageToHash.write(chainIdBytesBE)
+            messageToHash.write(publicKeyVersioned)
+            messageToHash.write(operationBytes)
+            val fullMessage = messageToHash.toByteArray()
+
+            // Hash and sign
+            val blake3Hash = hashWithBlake3(fullMessage)
+            android.util.Log.d("MassaRepository", "BLAKE3 hash computed")
+
+            val signer = Ed25519Signer()
+            signer.init(true, privateKeyParams)
+            signer.update(blake3Hash, 0, blake3Hash.size)
+            val signature = signer.generateSignature()
+            android.util.Log.d("MassaRepository", "Signature generated")
+
+            val signatureBase58 = encodeSignatureBase58(signature)
+            val serializedContent = operationBytes.map { it.toInt() and 0xFF }
+
+            val operation = mapOf(
+                "creator_public_key" to publicKeyBase58,
+                "signature" to signatureBase58,
+                "serialized_content" to serializedContent
+            )
+
+            android.util.Log.d("MassaRepository", "Sending RollSell operation to Massa node...")
+
+            val request = JsonRpcRequest(
+                method = "send_operations",
+                params = listOf(listOf(operation))
+            )
+            val response = massaApi.sendOperation(request)
+
+            android.util.Log.d("MassaRepository", "Response: error=${response.error}, result=${response.result}")
+
+            response.error?.let {
+                android.util.Log.e("MassaRepository", "RollSell error: ${it.message}")
+                return Result.Error(Exception(it.message))
+            }
+
+            response.result?.let { operationIds ->
+                val operationId = operationIds.firstOrNull() ?: return Result.Error(Exception("No operation ID returned"))
+                android.util.Log.i("MassaRepository", "✅ RollSell successful! Operation ID: $operationId")
+                return Result.Success(operationId)
+            }
+
+            Result.Error(Exception("Sell Rolls failed"))
+        } catch (e: Exception) {
+            android.util.Log.e("MassaRepository", "RollSell exception: ${e.message}", e)
+            Result.Error(e)
+        }
+    }
+
+    /**
+     * Execute bytecode on the Massa blockchain
+     * Operation type 3 = EXECUTE_SC in Massa protocol
+     * 
+     * This is used by DApps like EagleFi for complex operations like swaps
+     * where pre-compiled bytecode needs to be executed directly.
+     */
+    suspend fun executeBytecode(
+        from: String,
+        bytecode: String,
+        datastore: String?,
+        coins: String,
+        fee: String,
+        maxGas: String?,
+        privateKey: String,
+        publicKey: String
+    ): Result<String> {
+        return try {
+            android.util.Log.d("MassaRepository", "=== Starting Execute Bytecode ===")
+            android.util.Log.d("MassaRepository", "From: $from, Bytecode length: ${bytecode.length}")
+            android.util.Log.d("MassaRepository", "Coins: $coins, Fee: $fee, MaxGas: $maxGas")
+
+            // Get network status for chain ID and expiration period
+            val statusRequest = JsonRpcRequest(
+                method = "get_status",
+                params = emptyList<Any>()
+            )
+            val statusResponse = massaApi.getStatus(statusRequest)
+            statusResponse.error?.let {
+                android.util.Log.e("MassaRepository", "Status error: ${it.message}")
+                return Result.Error(Exception("Failed to fetch network status: ${it.message}"))
+            }
+
+            val chainId = statusResponse.result?.chainId?.toLongOrNull()
+                ?: return Result.Error(Exception("Network status missing chain id"))
+
+            val nextPeriod = statusResponse.result?.nextSlot?.period
+            val expirePeriod = nextPeriod?.plus(10)
+                ?: return Result.Error(Exception("Network status missing slot information"))
+
+            android.util.Log.d("MassaRepository", "ChainId: $chainId, ExpirePeriod: $expirePeriod")
+
+            // Serialize the ExecuteSC operation
+            val operationBytes = serializeExecuteSCOperation(
+                expirePeriod = expirePeriod,
+                fee = fee,
+                bytecode = bytecode,
+                datastore = datastore,
+                coins = coins,
+                maxGas = maxGas ?: "500000000" // Default 500M gas for bytecode execution
+            )
+            android.util.Log.d("MassaRepository", "ExecuteSC serialized (${operationBytes.size} bytes)")
+
+            // Derive public key from private key
+            val privateKeyBytes = if (privateKey.startsWith("S")) {
+                decodeBase58PrivateKey(privateKey)
+            } else {
+                privateKey.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            }
+            val privateKeyParams = Ed25519PrivateKeyParameters(privateKeyBytes, 0)
+            val publicKeyRaw = privateKeyParams.generatePublicKey().encoded
+            val publicKeyBase58 = encodePublicKeyBase58(publicKeyRaw)
+            android.util.Log.d("MassaRepository", "Public key derived: $publicKeyBase58")
+
+            // Build message to hash: chainId (u64 BE) + publicKey (versioned) + serialized_content
+            val chainIdBytesBE = java.nio.ByteBuffer.allocate(8)
+                .order(java.nio.ByteOrder.BIG_ENDIAN)
+                .putLong(chainId)
+                .array()
+
+            // Create versioned public key: version (1 byte) + raw key (32 bytes)
+            val publicKeyVersioned = ByteArray(33)
+            publicKeyVersioned[0] = 0  // Version 0
+            System.arraycopy(publicKeyRaw, 0, publicKeyVersioned, 1, 32)
+
+            val messageToHash = java.io.ByteArrayOutputStream()
+            messageToHash.write(chainIdBytesBE)
+            messageToHash.write(publicKeyVersioned)
+            messageToHash.write(operationBytes)
+            val fullMessage = messageToHash.toByteArray()
+
+            // Hash and sign
+            val blake3Hash = hashWithBlake3(fullMessage)
+            android.util.Log.d("MassaRepository", "BLAKE3 hash computed")
+
+            val signer = Ed25519Signer()
+            signer.init(true, privateKeyParams)
+            signer.update(blake3Hash, 0, blake3Hash.size)
+            val signature = signer.generateSignature()
+            android.util.Log.d("MassaRepository", "Signature generated")
+
+            val signatureBase58 = encodeSignatureBase58(signature)
+            val serializedContent = operationBytes.map { it.toInt() and 0xFF }
+
+            val operation = mapOf(
+                "creator_public_key" to publicKeyBase58,
+                "signature" to signatureBase58,
+                "serialized_content" to serializedContent
+            )
+
+            android.util.Log.d("MassaRepository", "Sending ExecuteSC operation to Massa node...")
+
+            val request = JsonRpcRequest(
+                method = "send_operations",
+                params = listOf(listOf(operation))
+            )
+            val response = massaApi.sendOperation(request)
+
+            android.util.Log.d("MassaRepository", "Response: error=${response.error}, result=${response.result}")
+
+            response.error?.let {
+                android.util.Log.e("MassaRepository", "ExecuteSC error: ${it.message}")
+                return Result.Error(Exception(it.message))
+            }
+            
+            response.result?.let { operationIds ->
+                val operationId = operationIds.firstOrNull() ?: return Result.Error(Exception("No operation ID returned"))
+                android.util.Log.i("MassaRepository", "✅ ExecuteSC successful! Operation ID: $operationId")
+                
+                // Add to transaction cache (normalize amount for display)
+                val transaction = Transaction(
+                    hash = operationId,
+                    from = from,
+                    to = "Bytecode Execution",
+                    amount = normalizeAmountForDisplay(coins),
+                    token = Token(
+                        address = "",
+                        symbol = "MAS",
+                        decimals = 18,
+                        name = "Massa"
+                    ),
+                    timestamp = System.currentTimeMillis(),
+                    status = com.massapay.android.core.model.TransactionStatus.PENDING,
+                    fee = normalizeAmountForDisplay(fee)
+                )
+                addTransactionToCache(from, transaction)
+                
+                return Result.Success(operationId)
+            }
+            
+            Result.Error(Exception("Execute bytecode failed"))
+        } catch (e: Exception) {
+            android.util.Log.e("MassaRepository", "ExecuteSC exception: ${e.message}", e)
+            Result.Error(e)
+        }
+    }
+
+    /**
+     * Serialize an ExecuteSC (Execute Smart Contract bytecode) operation
+     * 
+     * Operation format:
+     * - fee (varint): fee in nanoMAS
+     * - expire_period (varint): when the operation expires
+     * - op_type (varint): 3 for ExecuteSC
+     * - max_gas (varint): maximum gas for execution
+     * - bytecode_length (varint): length of bytecode
+     * - bytecode (bytes): compiled bytecode
+     * - datastore_length (varint): number of datastore entries
+     * - datastore entries: key-value pairs
+     */
+    private fun serializeExecuteSCOperation(
+        expirePeriod: Long,
+        fee: String,
+        bytecode: String,
+        datastore: String?,
+        coins: String,
+        maxGas: String
+    ): ByteArray {
+        val output = java.io.ByteArrayOutputStream()
+
+        // fee (already in nanoMAS)
+        val feeNanos = fee.toLongOrNull() ?: 10000000L
+        writeVarint(output, feeNanos)
+
+        // expiration_period
+        writeVarint(output, expirePeriod)
+
+        // type = 3 (ExecuteSC)
+        writeVarint(output, 3L)
+
+        // max_gas
+        val maxGasValue = maxGas.toLongOrNull() ?: 500000000L
+        writeVarint(output, maxGasValue)
+
+        // coins (in nanoMAS)
+        val coinsNanos = coins.toLongOrNull() ?: 0L
+        writeVarint(output, coinsNanos)
+
+        // Bytecode - convert from hex/base64 to bytes
+        val bytecodeBytes = try {
+            if (bytecode.startsWith("[") && bytecode.endsWith("]")) {
+                // JSON array format: [1,2,3,...]
+                val jsonArray = org.json.JSONArray(bytecode)
+                ByteArray(jsonArray.length()) { i ->
+                    (jsonArray.getInt(i) and 0xFF).toByte()
+                }
+            } else if (bytecode.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) {
+                // Hex format
+                bytecode.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            } else {
+                // Try Base64
+                android.util.Base64.decode(bytecode, android.util.Base64.DEFAULT)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MassaRepository", "Failed to decode bytecode: ${e.message}")
+            bytecode.toByteArray(Charsets.UTF_8)
+        }
+        
+        writeVarint(output, bytecodeBytes.size.toLong())
+        output.write(bytecodeBytes)
+
+        // Datastore entries
+        if (datastore != null && datastore.isNotEmpty() && datastore != "null" && datastore != "[]") {
+            try {
+                val datastoreArray = org.json.JSONArray(datastore)
+                writeVarint(output, datastoreArray.length().toLong())
+                for (i in 0 until datastoreArray.length()) {
+                    val entry = datastoreArray.getJSONObject(i)
+                    val key = entry.optString("key", "")
+                    val value = entry.optString("value", "")
+                    
+                    val keyBytes = if (key.startsWith("[")) {
+                        val arr = org.json.JSONArray(key)
+                        ByteArray(arr.length()) { j -> (arr.getInt(j) and 0xFF).toByte() }
+                    } else {
+                        key.toByteArray(Charsets.UTF_8)
+                    }
+                    
+                    val valueBytes = if (value.startsWith("[")) {
+                        val arr = org.json.JSONArray(value)
+                        ByteArray(arr.length()) { j -> (arr.getInt(j) and 0xFF).toByte() }
+                    } else {
+                        value.toByteArray(Charsets.UTF_8)
+                    }
+                    
+                    writeVarint(output, keyBytes.size.toLong())
+                    output.write(keyBytes)
+                    writeVarint(output, valueBytes.size.toLong())
+                    output.write(valueBytes)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MassaRepository", "Failed to parse datastore: ${e.message}")
+                writeVarint(output, 0L) // Empty datastore
+            }
+        } else {
+            writeVarint(output, 0L) // Empty datastore
+        }
+
+        return output.toByteArray()
+    }
+
+    /**
+     * Serialize a CallSC (Call Smart Contract) operation
+     * 
+     * Operation format:
+     * - fee (varint): fee in nanoMAS
+     * - expire_period (varint): when the operation expires
+     * - op_type (varint): 4 for CallSC
+     * - max_gas (varint): maximum gas for execution
+     * - coins (varint): MAS to send with the call
+     * - target_address (34 bytes): contract address
+     * - function_name_length (varint): length of function name
+     * - function_name (bytes): function name UTF-8
+     * - param_length (varint): length of parameter
+     * - param (bytes): parameter data
+     */
+    private fun serializeCallSCOperation(
+        expirePeriod: Long,
+        fee: String,
+        targetAddress: String,
+        functionName: String,
+        parameter: String?,
+        coins: String,
+        maxGas: String
+    ): ByteArray {
+        val output = java.io.ByteArrayOutputStream()
+
+        // fee (already in nanoMAS from DApp/Bearby)
+        val feeNanos = fee.toLongOrNull() ?: 10000000L
+        writeVarint(output, feeNanos)
+
+        // expiration_period
+        writeVarint(output, expirePeriod)
+
+        // type = 4 (CallSC)
+        writeVarint(output, 4L)
+
+        // max_gas
+        val maxGasValue = maxGas.toLongOrNull() ?: 100000000L
+        writeVarint(output, maxGasValue)
+
+        // coins (already in nanoMAS from DApp/Bearby)
+        // DApps like Dusa send coins already in nanoMAS format
+        val coinsNanos = coins.toLongOrNull() ?: 0L
+        writeVarint(output, coinsNanos)
+
+        // Target address: 34 bytes (addressType + version + hash)
+        val targetBytes = decodeBase58Address(targetAddress)
+        require(targetBytes.size == 34) { "Target address must be 34 bytes" }
+        output.write(targetBytes)
+
+        // Function name (length-prefixed)
+        val functionNameBytes = functionName.toByteArray(Charsets.UTF_8)
+        writeVarint(output, functionNameBytes.size.toLong())
+        output.write(functionNameBytes)
+
+        // Parameter (length-prefixed)
+        val paramBytes = if (parameter != null && parameter.isNotEmpty()) {
+            // Parameter can be:
+            // 1. JSON object with numeric keys like {"0":1,"1":2,...} (unsafeParameters from Bearby)
+            // 2. JSON array like [1,2,3,...]
+            // 3. Base64 encoded
+            // 4. Hex encoded
+            // 5. Raw UTF-8
+            try {
+                // First try to parse as JSON object with numeric keys (unsafeParameters format)
+                if (parameter.startsWith("{") && parameter.contains(":")) {
+                    val jsonObj = org.json.JSONObject(parameter)
+                    val keys = jsonObj.keys().asSequence().toList()
+                    if (keys.isNotEmpty() && keys.all { it.toIntOrNull() != null }) {
+                        // It's a JSON object with numeric keys - convert to byte array
+                        val maxIndex = keys.mapNotNull { it.toIntOrNull() }.maxOrNull() ?: -1
+                        val bytes = ByteArray(maxIndex + 1)
+                        for (key in keys) {
+                            val index = key.toIntOrNull() ?: continue
+                            bytes[index] = jsonObj.getInt(key).toByte()
+                        }
+                        android.util.Log.d("MassaRepository", "Parameter parsed as JSON object with ${bytes.size} bytes")
+                        bytes
+                    } else {
+                        // Regular JSON object - encode as UTF-8
+                        parameter.toByteArray(Charsets.UTF_8)
+                    }
+                }
+                // Try as JSON array
+                else if (parameter.startsWith("[")) {
+                    val jsonArray = org.json.JSONArray(parameter)
+                    val bytes = ByteArray(jsonArray.length())
+                    for (i in 0 until jsonArray.length()) {
+                        bytes[i] = jsonArray.getInt(i).toByte()
+                    }
+                    android.util.Log.d("MassaRepository", "Parameter parsed as JSON array with ${bytes.size} bytes")
+                    bytes
+                }
+                // Try as Base64
+                else {
+                    try {
+                        val decoded = android.util.Base64.decode(parameter, android.util.Base64.DEFAULT)
+                        android.util.Log.d("MassaRepository", "Parameter parsed as Base64 with ${decoded.size} bytes")
+                        decoded
+                    } catch (e: Exception) {
+                        // Try as hex
+                        try {
+                            val decoded = parameter.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+                            android.util.Log.d("MassaRepository", "Parameter parsed as Hex with ${decoded.size} bytes")
+                            decoded
+                        } catch (e2: Exception) {
+                            // Use as raw UTF-8
+                            android.util.Log.d("MassaRepository", "Parameter parsed as UTF-8")
+                            parameter.toByteArray(Charsets.UTF_8)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MassaRepository", "Error parsing parameter: ${e.message}")
+                ByteArray(0)
+            }
+        } else {
+            ByteArray(0)
+        }
+        android.util.Log.d("MassaRepository", "Final parameter bytes: ${paramBytes.size} bytes")
+        writeVarint(output, paramBytes.size.toLong())
+        output.write(paramBytes)
+
+        return output.toByteArray()
+    }
+
+    /**
+     * Serialize a RollBuy operation
+     * 
+     * Operation format:
+     * - fee (varint): fee in nanoMAS
+     * - expire_period (varint): when the operation expires
+     * - op_type (varint): 1 for RollBuy
+     * - roll_count (varint): number of rolls to buy
+     */
+    private fun serializeRollBuyOperation(
+        expirePeriod: Long,
+        fee: String,
+        rollCount: Int
+    ): ByteArray {
+        val output = java.io.ByteArrayOutputStream()
+
+        // fee (in nanoMAS)
+        val feeNanos = masToNano(fee)
+        writeVarint(output, feeNanos)
+
+        // expiration_period
+        writeVarint(output, expirePeriod)
+
+        // type = 1 (RollBuy)
+        writeVarint(output, 1L)
+
+        // roll_count
+        writeVarint(output, rollCount.toLong())
+
+        return output.toByteArray()
+    }
+
+    /**
+     * Serialize a RollSell operation
+     * 
+     * Operation format:
+     * - fee (varint): fee in nanoMAS
+     * - expire_period (varint): when the operation expires
+     * - op_type (varint): 2 for RollSell
+     * - roll_count (varint): number of rolls to sell
+     */
+    private fun serializeRollSellOperation(
+        expirePeriod: Long,
+        fee: String,
+        rollCount: Int
+    ): ByteArray {
+        val output = java.io.ByteArrayOutputStream()
+
+        // fee (in nanoMAS)
+        val feeNanos = masToNano(fee)
+        writeVarint(output, feeNanos)
+
+        // expiration_period
+        writeVarint(output, expirePeriod)
+
+        // type = 2 (RollSell)
+        writeVarint(output, 2L)
+
+        // roll_count
+        writeVarint(output, rollCount.toLong())
+
+        return output.toByteArray()
     }
 
     suspend fun getTransactionHistory(address: String): Result<List<Transaction>> {
@@ -653,6 +1517,22 @@ class MassaRepository @Inject constructor(
 
         // Skip version byte (first byte) and checksum (last 4 bytes)
         // Return only the 32-byte Ed25519 public key
+        return decoded.copyOfRange(1, 33)
+    }
+
+    /**
+     * Decode a Massa private key in S1 format (base58 encoded)
+     * Format: S + base58(version + raw_32_bytes + checksum)
+     * Returns the raw 32-byte Ed25519 private key seed
+     */
+    private fun decodeBase58PrivateKey(privateKeyS1: String): ByteArray {
+        require(privateKeyS1.startsWith("S")) { "Invalid private key prefix (expected 'S')" }
+        val base58Part = privateKeyS1.substring(1)
+        val decoded = decodeBase58(base58Part)
+        require(decoded.size >= 37) { "Invalid decoded private key length" }
+
+        // decoded format: version(1) + raw_key(32) + checksum(4) = 37 bytes
+        // Skip version byte (first byte) and checksum (last 4 bytes)
         return decoded.copyOfRange(1, 33)
     }
 

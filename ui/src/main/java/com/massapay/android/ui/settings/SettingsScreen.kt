@@ -36,76 +36,33 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onShowMnemonic: () -> Unit,
     onResetWallet: () -> Unit = {},
+    onManageAccounts: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    
+    var showSeedPhraseDialog by remember { mutableStateOf(false) }
+    var showPrivateKeyDialog by remember { mutableStateOf(false) }
     var showChangePinDialog by remember { mutableStateOf(false) }
     var showPinResultDialog by remember { mutableStateOf(false) }
     var showClearDataDialog by remember { mutableStateOf(false) }
-    var showSeedPhraseDialog by remember { mutableStateOf(false) }
-    var showPrivateKeyDialog by remember { mutableStateOf(false) }
     var biometricError by remember { mutableStateOf<String?>(null) }
     
-    val context = LocalContext.current
-    val activity = context as? FragmentActivity
-    
-    // Setup biometric prompt for enabling biometric
-    val biometricPrompt = remember {
-        activity?.let {
-            BiometricPrompt(
-                it,
-                ContextCompat.getMainExecutor(context),
-                object : BiometricPrompt.AuthenticationCallback() {
-                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                        viewModel.toggleBiometric(true)
-                        biometricError = null
-                    }
-
-                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                        viewModel.toggleBiometric(false)
-                        biometricError = "Biometric authentication failed: $errString"
-                    }
-
-                    override fun onAuthenticationFailed() {
-                        viewModel.toggleBiometric(false)
-                        biometricError = "Biometric authentication failed"
-                    }
-                }
-            )
-        }
-    }
-
-    val promptInfo = remember {
-        BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Enable Biometric Authentication")
-            .setSubtitle("Authenticate to enable biometric unlock")
-            .setNegativeButtonText("Cancel")
-            .build()
-    }
-
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { 
-                    Text(
-                        "Settings",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                        )
-                    ) 
-                },
+            CenterAlignedTopAppBar(
+                title = { Text("Settings") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
                 )
             )
-        },
-        containerColor = MaterialTheme.colorScheme.background
+        }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -113,9 +70,9 @@ fun SettingsScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // Appearance Section with modern card
+            // Appearance Section
             SettingsSection(title = "Appearance") {
                 var showThemeDialog by remember { mutableStateOf(false) }
                 
@@ -131,7 +88,7 @@ fun SettingsScreen(
                         onClick = { showThemeDialog = true }
                     )
                 }
-
+                
                 if (showThemeDialog) {
                     ModernThemeDialog(
                         currentTheme = uiState.themeMode,
@@ -143,8 +100,8 @@ fun SettingsScreen(
                     )
                 }
             }
-
-            // Security Section with modern cards
+            
+            // Security Section
             SettingsSection(title = "Security") {
                 ModernSettingsCard {
                     ModernSettingsItem(
@@ -161,47 +118,20 @@ fun SettingsScreen(
                     
                     ModernSettingsItem(
                         icon = Icons.Outlined.Fingerprint,
-                        title = "Biometric Authentication",
-                        subtitle = if (uiState.biometricEnabled) "Enabled" else "Disabled",
+                        title = "Biometric Login",
+                        subtitle = "Use fingerprint or face ID",
                         trailing = {
                             Switch(
                                 checked = uiState.biometricEnabled,
                                 onCheckedChange = { enabled ->
                                     if (enabled) {
-                                        // Check if biometric is available
-                                        val biometricManager = AndroidBiometricManager.from(context)
-                                        val canAuthenticate = biometricManager.canAuthenticate(
-                                            AndroidBiometricManager.Authenticators.BIOMETRIC_STRONG or 
-                                            AndroidBiometricManager.Authenticators.BIOMETRIC_WEAK
-                                        )
-                                        
-                                        when (canAuthenticate) {
-                                            AndroidBiometricManager.BIOMETRIC_SUCCESS -> {
-                                                // Launch biometric prompt
-                                                biometricPrompt?.authenticate(promptInfo)
-                                            }
-                                            AndroidBiometricManager.BIOMETRIC_ERROR_NO_HARDWARE -> {
-                                                biometricError = "No biometric hardware available"
-                                            }
-                                            AndroidBiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE -> {
-                                                biometricError = "Biometric hardware unavailable"
-                                            }
-                                            AndroidBiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> {
-                                                biometricError = "No biometric credentials enrolled. Please set up biometric in device settings."
-                                            }
-                                            else -> {
-                                                biometricError = "Biometric authentication not available"
-                                            }
+                                        viewModel.enableBiometric(context as FragmentActivity) { error ->
+                                            biometricError = error
                                         }
                                     } else {
-                                        // Disable directly
-                                        viewModel.toggleBiometric(false)
+                                        viewModel.disableBiometric()
                                     }
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = MaterialTheme.colorScheme.primary,
-                                    checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
-                                )
+                                }
                             )
                         }
                     )
@@ -212,30 +142,23 @@ fun SettingsScreen(
                     )
                     
                     ModernSettingsItem(
-                        icon = Icons.Outlined.Shield,
-                        title = if (uiState.isS1Import) "Private Key" else "Recovery Phrase",
-                        subtitle = if (uiState.isS1Import) {
-                            "View your S1 private key"
-                        } else {
-                            "View your secret recovery phrase"
-                        },
+                        icon = Icons.Outlined.Visibility,
+                        title = "Show Recovery Phrase",
+                        subtitle = "View your 12-word seed phrase",
                         onClick = { showSeedPhraseDialog = true }
                     )
                     
-                    // Only show the "Export Keys" option for mnemonic-based wallets
-                    if (!uiState.isS1Import) {
-                        Divider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                        
-                        ModernSettingsItem(
-                            icon = Icons.Outlined.Key,
-                            title = "Export Keys",
-                            subtitle = "View Private Key (S1) and Public Key (P1)",
-                            onClick = { showPrivateKeyDialog = true }
-                        )
-                    }
+                    Divider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    
+                    ModernSettingsItem(
+                        icon = Icons.Outlined.Key,
+                        title = "Show Private Key",
+                        subtitle = "View your private key",
+                        onClick = { showPrivateKeyDialog = true }
+                    )
                 }
             }
 
@@ -244,9 +167,23 @@ fun SettingsScreen(
                 ModernSettingsCard {
                     ModernSettingsItem(
                         icon = Icons.Outlined.AccountBalanceWallet,
-                        title = "Active Wallet",
-                        subtitle = uiState.activeWallet ?: "No wallet selected",
+                        title = uiState.activeAccountName,
+                        subtitle = uiState.activeWallet?.let { 
+                            "${it.take(12)}...${it.takeLast(8)}"
+                        } ?: "No wallet selected",
                         showArrow = false
+                    )
+                    
+                    Divider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    
+                    ModernSettingsItem(
+                        icon = Icons.Outlined.ManageAccounts,
+                        title = "Manage Accounts",
+                        subtitle = "Create, switch, or remove accounts",
+                        onClick = onManageAccounts
                     )
                 }
             }
@@ -540,7 +477,7 @@ fun SettingsScreen(
                     ModernSettingsItem(
                         icon = Icons.Outlined.Info,
                         title = "MassaPay",
-                        subtitle = "Version 1.0.0 - Tap to view details",
+                        subtitle = "Version 1.1.0 - Tap to view details",
                         onClick = { showAboutDialog = true }
                     )
                 }
@@ -568,7 +505,7 @@ fun SettingsScreen(
                                         )
                                     )
                                     Text(
-                                        text = "Version 1.0.0",
+                                        text = "Version 1.1.0",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

@@ -9,7 +9,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -24,22 +23,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.draw.rotate
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.core.view.WindowCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.compose.animation.core.*
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.scale
 import kotlinx.coroutines.delay
 import com.massapay.android.security.storage.SecureStorage
 import com.massapay.android.ui.dashboard.DashboardScreen
@@ -50,7 +38,9 @@ import com.massapay.android.ui.settings.SettingsScreen
 import com.massapay.android.ui.transaction.ReceiveScreen
 import com.massapay.android.ui.transaction.SendScreen
 import com.massapay.android.ui.transaction.SendViewModel
+import com.massapay.android.ui.swap.SwapScreen
 import com.massapay.android.ui.charts.ChartsScreen
+import com.massapay.android.ui.portfolio.PortfolioScreen
 import com.massapay.android.ui.theme.MassaPayTheme
 import com.massapay.android.core.preferences.ThemeManager
 import com.massapay.android.core.preferences.ThemeMode
@@ -77,7 +67,7 @@ class MainActivity : FragmentActivity() {
         enableEdgeToEdge()
         
         setContent {
-            val themeMode by themeManager.themeMode.collectAsState(initial = ThemeMode.DARK)
+            val themeMode by themeManager.themeMode.collectAsState(initial = ThemeMode.LIGHT)
             val isSystemInDarkTheme = isSystemInDarkTheme()
             var showSplash by remember { mutableStateOf(true) }
             val isLocked by sessionManager.isLocked.collectAsState()
@@ -222,7 +212,30 @@ class MainActivity : FragmentActivity() {
                             onChartsClick = {
                                 navController.navigate("charts")
                             },
+                            onAccountsClick = {
+                                navController.navigate("accounts")
+                            },
+                            onStakingClick = {
+                                navController.navigate("staking")
+                            },
+                            onSwapClick = {
+                                navController.navigate("swap")
+                            },
+                            onDAppBrowserClick = {
+                                navController.navigate("dapp-browser")
+                            },
+                            onPortfolioClick = {
+                                navController.navigate("portfolio")
+                            },
                             viewModel = dashboardViewModel
+                        )
+                    }
+                    
+                    composable("portfolio") {
+                        PortfolioScreen(
+                            onClose = {
+                                navController.popBackStack()
+                            }
                         )
                     }
                     
@@ -279,13 +292,30 @@ class MainActivity : FragmentActivity() {
                                 navController.navigate("onboarding") {
                                     popUpTo(0) { inclusive = true }
                                 }
+                            },
+                            onManageAccounts = {
+                                navController.navigate("accounts")
                             }
+                        )
+                    }
+                    
+                    composable("accounts") {
+                        com.massapay.android.ui.accounts.AccountsScreen(
+                            onClose = { navController.popBackStack() }
                         )
                     }
                     
                     composable("charts") {
                         ChartsScreen(
                             onBackClick = {
+                                navController.popBackStack()
+                            }
+                        )
+                    }
+                    
+                    composable("swap") {
+                        SwapScreen(
+                            onClose = {
                                 navController.popBackStack()
                             }
                         )
@@ -307,41 +337,103 @@ class MainActivity : FragmentActivity() {
                     }
                     
                     composable("nft") {
-                        // NFT placeholder screen
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.background),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Star,
-                                    contentDescription = "NFT",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(64.dp)
-                                )
-                                Text(
-                                    "NFT Section",
-                                    style = MaterialTheme.typography.headlineMedium,
-                                    color = MaterialTheme.colorScheme.onBackground
-                                )
-                                Text(
-                                    "Coming soon",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-                                )
-                                TextButton(onClick = { navController.popBackStack() }) {
-                                    Text(
-                                        "Back to Home",
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
+                        com.massapay.android.ui.nft.NFTGalleryScreen(
+                            onNFTClick = { nft ->
+                                // Navigate to NFT detail with serialized NFT
+                                navController.currentBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set("selected_nft", nft)
+                                navController.navigate("nft-detail")
+                            },
+                            onClose = { navController.popBackStack() },
+                            isDarkTheme = darkTheme
+                        )
+                    }
+                    
+                    composable("nft-detail") {
+                        val nft = navController.previousBackStackEntry
+                            ?.savedStateHandle
+                            ?.get<com.massapay.android.core.model.NFT>("selected_nft")
+                        
+                        if (nft != null) {
+                            val nftViewModel: com.massapay.android.ui.nft.NFTGalleryViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+                            val nftUiState by nftViewModel.uiState.collectAsState()
+                            
+                            com.massapay.android.ui.nft.NFTDetailScreen(
+                                nft = nft,
+                                onClose = { navController.popBackStack() },
+                                onTransfer = { toAddress ->
+                                    android.util.Log.d("NFT", "Transfer ${nft.tokenId} to $toAddress")
+                                    nftViewModel.transferNFT(nft, toAddress)
+                                },
+                                isDarkTheme = darkTheme,
+                                isTransferring = nftUiState.isTransferring,
+                                transferSuccess = nftUiState.transferSuccess,
+                                transferError = nftUiState.error,
+                                onDismissResult = { nftViewModel.resetTransferState() }
+                            )
+                        } else {
+                            // Fallback if no NFT was passed
+                            LaunchedEffect(Unit) {
+                                navController.popBackStack()
                             }
                         }
+                    }
+                    
+                    composable("staking") {
+                        com.massapay.android.ui.staking.StakingScreen(
+                            onClose = { navController.popBackStack() },
+                            isDarkTheme = darkTheme
+                        )
+                    }
+                    
+                    composable("dapp-browser") {
+                        com.massapay.android.ui.dapp.DAppBrowserScreen(
+                            onClose = { navController.popBackStack() },
+                            isDarkTheme = darkTheme,
+                            onWalletConnectClick = {
+                                navController.navigate("walletconnect")
+                            }
+                        )
+                    }
+                    
+                    composable("walletconnect") {
+                        val wcViewModel: com.massapay.android.ui.walletconnect.WalletConnectViewModel = hiltViewModel()
+                        
+                        // Handle WC URI from scanner
+                        val wcUri = it.savedStateHandle.get<String>("wc_uri")
+                        LaunchedEffect(wcUri) {
+                            if (!wcUri.isNullOrEmpty()) {
+                                wcViewModel.connectWithUri(wcUri)
+                                it.savedStateHandle.remove<String>("wc_uri")
+                            }
+                        }
+                        
+                        com.massapay.android.ui.walletconnect.WalletConnectScreen(
+                            onClose = { navController.popBackStack() },
+                            onScanQR = {
+                                navController.navigate("wc-scanner")
+                            },
+                            isDarkTheme = darkTheme,
+                            viewModel = wcViewModel
+                        )
+                    }
+                    
+                    composable("wc-scanner") {
+                        QrScannerScreen(
+                            onNavigateBack = {
+                                navController.popBackStack()
+                            },
+                            onQrCodeScanned = { qrData ->
+                                // If it's a WalletConnect URI, pass it back
+                                if (qrData.startsWith("wc:")) {
+                                    navController.previousBackStackEntry
+                                        ?.savedStateHandle
+                                        ?.set("wc_uri", qrData)
+                                }
+                                navController.popBackStack()
+                            }
+                        )
                     }
                 }
                 }

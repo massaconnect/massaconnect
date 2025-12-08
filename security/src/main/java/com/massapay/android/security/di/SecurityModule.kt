@@ -5,7 +5,9 @@ import com.massapay.android.security.biometric.BiometricManager
 import com.massapay.android.security.crypto.KeystoreManager
 import com.massapay.android.security.storage.SecureStorage
 import com.massapay.android.security.storage.SecureStorageManager
+import com.massapay.android.security.wallet.AccountManager
 import com.massapay.android.security.wallet.MnemonicManager
+import com.massapay.android.security.wallet.WalletManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -39,7 +41,26 @@ object SecurityModule {
 
     @Provides
     @Singleton
+    fun provideAccountManager(
+        walletManager: WalletManager,
+        mnemonicManager: MnemonicManager,
+        secureStorage: SecureStorage,
+        @ApplicationContext context: Context
+    ): AccountManager {
+        return AccountManager(walletManager, mnemonicManager, secureStorage, context)
+    }
+
+    @Provides
+    @Singleton
     fun provideSecureStorageManager(): SecureStorageManager {
         return SecureStorageManager()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideBiometricManager(
+        @ApplicationContext context: Context
+    ): BiometricManager {
+        return BiometricManager(context)
     }
 }

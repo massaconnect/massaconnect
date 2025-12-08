@@ -3,6 +3,7 @@ package com.massapay.android.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.massapay.android.security.storage.SecureStorage
+import com.massapay.android.security.wallet.AccountManager
 import com.massapay.android.core.preferences.ThemeManager
 import com.massapay.android.core.preferences.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,7 +18,8 @@ class SettingsViewModel @Inject constructor(
     private val secureStorage: SecureStorage,
     private val themeManager: ThemeManager,
     private val walletManager: com.massapay.android.security.wallet.WalletManager,
-    private val massaRepository: com.massapay.android.network.repository.MassaRepository
+    private val massaRepository: com.massapay.android.network.repository.MassaRepository,
+    private val accountManager: AccountManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsState())
@@ -25,24 +27,41 @@ class SettingsViewModel @Inject constructor(
 
     init {
         loadSettings()
+        observeActiveAccount()
+    }
+
+    private fun observeActiveAccount() {
+        viewModelScope.launch {
+            accountManager.activeAccount.collect { account ->
+                account?.let {
+                    _uiState.update { state ->
+                        state.copy(
+                            activeWallet = account.address,
+                            activeAccountName = account.name
+                        )
+                    }
+                }
+            }
+        }
     }
 
     private fun loadSettings() {
         viewModelScope.launch {
             themeManager.themeMode.collect { themeMode ->
-                val activeWallet = secureStorage.getActiveWallet()
+                val activeAccount = accountManager.activeAccount.value
+                val activeWallet = activeAccount?.address ?: secureStorage.getActiveWallet()
                 
-                // Check if wallet was imported from S1 key or mnemonic
-                val mnemonic = secureStorage.getMnemonic("default_wallet")
-                val s1Key = secureStorage.getMnemonic("s1_private_key")
-                val isS1Import = s1Key != null && mnemonic == null
+                // Check if active account has mnemonic or was imported from S1
+                val hasMnemonic = !activeAccount?.mnemonic.isNullOrBlank()
+                val isS1Import = !hasMnemonic
                 
                 _uiState.update {
                     it.copy(
                         biometricEnabled = secureStorage.isBiometricEnabled(),
                         activeWallet = activeWallet,
-                        seedPhrase = if (isS1Import) null else mnemonic,
-                        s1PrivateKey = if (isS1Import) s1Key else null,
+                        activeAccountName = activeAccount?.name ?: "Main Account",
+                        seedPhrase = if (hasMnemonic) activeAccount?.mnemonic else null,
+                        s1PrivateKey = if (isS1Import) activeAccount?.privateKeyS1 else null,
                         isS1Import = isS1Import,
                         themeMode = themeMode
                     )
@@ -54,6 +73,57 @@ class SettingsViewModel @Inject constructor(
     fun toggleBiometric(enabled: Boolean) {
         secureStorage.setBiometricEnabled(enabled)
         _uiState.update { it.copy(biometricEnabled = enabled) }
+    }
+
+    fun enableBiometric(activity: androidx.fragment.app.FragmentActivity, onError: (String) -> Unit) {
+        val biometricManager = androidx.biometric.BiometricManager.from(activity)
+        val canAuthenticate = biometricManager.canAuthenticate(
+            androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
+            androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
+        )
+
+        when (canAuthenticate) {
+            androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS -> {
+                val executor = androidx.core.content.ContextCompat.getMainExecutor(activity)
+                val biometricPrompt = androidx.biometric.BiometricPrompt(
+                    activity,
+                    executor,
+                    object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+                            toggleBiometric(true)
+                        }
+                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                            onError("Authentication error: $errString")
+                        }
+                        override fun onAuthenticationFailed() {
+                            onError("Authentication failed")
+                        }
+                    }
+                )
+                val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+                    .setTitle("Enable Biometric Authentication")
+                    .setSubtitle("Authenticate to enable biometric unlock")
+                    .setNegativeButtonText("Cancel")
+                    .build()
+                biometricPrompt.authenticate(promptInfo)
+            }
+            androidx.biometric.BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE -> {
+                onError("No biometric hardware available")
+            }
+            androidx.biometric.BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE -> {
+                onError("Biometric hardware unavailable")
+            }
+            androidx.biometric.BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> {
+                onError("No biometric credentials enrolled. Please set up biometric in device settings.")
+            }
+            else -> {
+                onError("Biometric authentication not available")
+            }
+        }
+    }
+
+    fun disableBiometric() {
+        toggleBiometric(false)
     }
 
     fun setThemeMode(mode: ThemeMode) {
@@ -83,16 +153,16 @@ class SettingsViewModel @Inject constructor(
     }
     
     fun loadSeedPhrase() {
-        // Check if wallet was imported from S1 key or mnemonic
-        val mnemonic = secureStorage.getMnemonic("default_wallet")
-        val s1Key = secureStorage.getMnemonic("s1_private_key")
-        val isS1Import = s1Key != null && mnemonic == null
+        // Get seed phrase from active account
+        val activeAccount = accountManager.activeAccount.value
+        val mnemonic = activeAccount?.mnemonic
+        val hasMnemonic = !mnemonic.isNullOrBlank()
         
         _uiState.update { 
             it.copy(
-                seedPhrase = if (isS1Import) null else mnemonic,
-                s1PrivateKey = if (isS1Import) s1Key else null,
-                isS1Import = isS1Import
+                seedPhrase = if (hasMnemonic) mnemonic else null,
+                s1PrivateKey = if (!hasMnemonic) activeAccount?.privateKeyS1 else null,
+                isS1Import = !hasMnemonic
             ) 
         }
     }
@@ -100,36 +170,45 @@ class SettingsViewModel @Inject constructor(
     fun loadPrivateKey() {
         viewModelScope.launch {
             try {
-                // Check if wallet was imported from S1 key or mnemonic
-                val mnemonic = secureStorage.getMnemonic("default_wallet")
-                val s1Key = secureStorage.getMnemonic("s1_private_key")
-                val isS1Import = s1Key != null && mnemonic == null
+                // Get keys from active account
+                val activeAccount = accountManager.activeAccount.value
                 
-                if (isS1Import && s1Key != null) {
-                    // For S1 imports, derive public key from S1 private key
-                    val privateKeyBytes = walletManager.decodeS1PrivateKey(s1Key)
-                    val publicKeyBytes = walletManager.derivePublicKey(privateKeyBytes)
-                    val publicKeyP1 = walletManager.encodePublicKeyP1(publicKeyBytes)
-                    
+                if (activeAccount != null) {
                     _uiState.update { it.copy(
-                        privateKeyS1 = s1Key,  // S1 private key format
-                        publicKeyP1 = publicKeyP1,  // P1 public key format
-                        isS1Import = true
-                    ) }
-                } else if (mnemonic != null) {
-                    // For mnemonic imports, derive both keys
-                    val privateKeyBytes = walletManager.getPrivateKey(mnemonic)
-                    val privateKeyS1 = walletManager.getPrivateKeyS1(mnemonic)
-                    val publicKeyBytes = walletManager.derivePublicKey(privateKeyBytes)
-                    val publicKeyP1 = walletManager.encodePublicKeyP1(publicKeyBytes)
-                    
-                    _uiState.update { it.copy(
-                        privateKeyS1 = privateKeyS1,  // S1 private key format
-                        publicKeyP1 = publicKeyP1,  // P1 public key format
-                        isS1Import = false
+                        privateKeyS1 = activeAccount.privateKeyS1,
+                        publicKeyP1 = activeAccount.publicKey,
+                        isS1Import = activeAccount.mnemonic.isBlank()
                     ) }
                 } else {
-                    _uiState.update { it.copy(error = "No wallet found") }
+                    // Fallback to old method for migration
+                    val mnemonic = secureStorage.getMnemonic("default_wallet")
+                    val s1Key = secureStorage.getMnemonic("s1_private_key")
+                    val isS1Import = s1Key != null && mnemonic == null
+                    
+                    if (isS1Import && s1Key != null) {
+                        val privateKeyBytes = walletManager.decodeS1PrivateKey(s1Key)
+                        val publicKeyBytes = walletManager.derivePublicKey(privateKeyBytes)
+                        val publicKeyP1 = walletManager.encodePublicKeyP1(publicKeyBytes)
+                        
+                        _uiState.update { it.copy(
+                            privateKeyS1 = s1Key,
+                            publicKeyP1 = publicKeyP1,
+                            isS1Import = true
+                        ) }
+                    } else if (mnemonic != null) {
+                        val privateKeyBytes = walletManager.getPrivateKey(mnemonic)
+                        val privateKeyS1 = walletManager.getPrivateKeyS1(mnemonic)
+                        val publicKeyBytes = walletManager.derivePublicKey(privateKeyBytes)
+                        val publicKeyP1 = walletManager.encodePublicKeyP1(publicKeyBytes)
+                        
+                        _uiState.update { it.copy(
+                            privateKeyS1 = privateKeyS1,
+                            publicKeyP1 = publicKeyP1,
+                            isS1Import = false
+                        ) }
+                    } else {
+                        _uiState.update { it.copy(error = "No wallet found") }
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Failed to load keys: ${e.message}") }
@@ -206,7 +285,8 @@ class SettingsViewModel @Inject constructor(
 data class SettingsState(
     val biometricEnabled: Boolean = false,
     val activeWallet: String? = null,
-    val themeMode: ThemeMode = ThemeMode.DARK,
+    val activeAccountName: String = "Main Account",
+    val themeMode: ThemeMode = ThemeMode.LIGHT,
     val seedPhrase: String? = null,
     val s1PrivateKey: String? = null,
     val isS1Import: Boolean = false,

@@ -9,28 +9,79 @@ import com.massapay.android.price.repository.PriceRepository
 import com.massapay.android.price.model.MassaStats
 import com.massapay.android.security.storage.SecureStorage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.math.BigDecimal
+import java.math.BigInteger
+import java.math.RoundingMode
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
+
+// Token info for portfolio calculation
+private data class TokenInfo(
+    val symbol: String,
+    val contractAddress: String,
+    val decimals: Int,
+    val defaultPrice: BigDecimal
+)
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val massaRepository: MassaRepository,
     private val priceRepository: PriceRepository,
-    private val secureStorage: SecureStorage
+    private val secureStorage: SecureStorage,
+    private val accountManager: com.massapay.android.security.wallet.AccountManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardState())
     val uiState: StateFlow<DashboardState> = _uiState
+    
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
+    
+    // All supported tokens for portfolio calculation
+    private val supportedTokens = listOf(
+        TokenInfo("WMAS", "AS12U4TZfNK7qoLyEERBBRDMu8nm5MKoRzPXDXans4v9wdATZedz9", 9, BigDecimal("0.003")),
+        TokenInfo("USDC.e", "AS1hCJXjndR4c9vekLWsXGnrdigp4AaZ7uYG3UKFzzKnWVsrNLPJ", 6, BigDecimal("1.0")),
+        TokenInfo("WETH.e", "AS124vf3YfAJCSCQVYKczzuWWpXrximFpbTmX4rheLs5uNSftiiRY", 18, BigDecimal("4000")),
+        TokenInfo("DAI.e", "AS1ZGF1upwp9kPRvDKLxFAKRebgg7b3RWDnhgV7VvdZkZsUL7Nuv", 18, BigDecimal("1.0")),
+        TokenInfo("DUSA", "AS12HT1JQUne9nkHevS9Q7HcsoAaYLXWPNgoWPuruV7Gw6Mb92ACL", 18, BigDecimal("0.01")),
+        TokenInfo("PUR", "AS133eqPPaPttJ6hJnk3sfoG5cjFFqBDi1VGxdo2wzWkq8AfZnan", 9, BigDecimal("0.0001"))
+    )
 
     init {
         viewModelScope.launch {
-            // Get active wallet address
-            val address = secureStorage.getActiveWallet()
-            address?.let {
-                // store active wallet in state
-                _uiState.update { state -> state.copy(activeWallet = it) }
-                loadWalletData(it)
+            // Observe active account changes from AccountManager
+            accountManager.activeAccount.collect { account ->
+                account?.let {
+                    // store active wallet and account info in state
+                    _uiState.update { state -> state.copy(
+                        activeWallet = it.address,
+                        activeAccountName = it.name,
+                        activeAccountColor = it.color.hex,
+                        accountCount = accountManager.accounts.value.size
+                    ) }
+                    loadWalletData(it.address)
+                } ?: run {
+                    // Fallback to secureStorage if AccountManager hasn't loaded yet
+                    val address = secureStorage.getActiveWallet()
+                    address?.let {
+                        _uiState.update { state -> state.copy(activeWallet = it) }
+                        loadWalletData(it)
+                    }
+                }
             }
         }
     }
@@ -38,7 +89,7 @@ class DashboardViewModel @Inject constructor(
     private fun loadWalletData(address: String) {
         viewModelScope.launch {
             try {
-                // Get balance - si falla, mostrar 0
+                // Get MAS balance - si falla, mostrar 0
                 when (val balRes = massaRepository.getAddressBalance(address)) {
                     is com.massapay.android.core.util.Result.Success -> {
                         val balance = balRes.data ?: "0"
@@ -46,6 +97,13 @@ class DashboardViewModel @Inject constructor(
                             balance = balance,
                             isLoading = false
                         ) }
+                        
+                        // Update account balance in AccountManager
+                        accountManager.activeAccount.value?.let { account ->
+                            if (account.address == address) {
+                                accountManager.updateAccountBalance(account.id, balance)
+                            }
+                        }
 
                         // Get USD value and stats
                         try {
@@ -57,14 +115,19 @@ class DashboardViewModel @Inject constructor(
                                         is com.massapay.android.core.util.Result.Success -> {
                                             val stats = result.data
                                             android.util.Log.d("DashboardVM", "Stats received: price=${stats.price}, rank=${stats.rank}")
+                                            val masUsdValue = balance.toBigDecimal().multiply(stats.price.toBigDecimal())
+                                            
                                             _uiState.update { state ->
                                                 state.copy(
-                                                    usdValue = balance.toBigDecimal().multiply(stats.price.toBigDecimal()).toString(),
+                                                    usdValue = masUsdValue.toString(),
                                                     currentPrice = stats.price,
                                                     priceChange24h = stats.percentChange24h,
                                                     massaStats = stats
                                                 )
                                             }
+                                            
+                                            // Now calculate total portfolio value including other tokens
+                                            calculateTotalPortfolioValue(address, masUsdValue, stats.price)
                                         }
                                         is com.massapay.android.core.util.Result.Error -> {
                                             android.util.Log.e("DashboardVM", "Error getting stats: ${result.exception.message}")
@@ -125,17 +188,173 @@ class DashboardViewModel @Inject constructor(
 
     fun refreshData() {
         _uiState.update { it.copy(isLoading = true) }
-        secureStorage.getActiveWallet()?.let { loadWalletData(it) }
+        val address = accountManager.activeAccount.value?.address ?: secureStorage.getActiveWallet()
+        address?.let { loadWalletData(it) }
     }
 
     fun toggleUsdDisplay() {
         _uiState.update { it.copy(showUsdValue = !it.showUsdValue) }
+    }
+    
+    /**
+     * Calculate total portfolio value by fetching all token balances
+     */
+    private fun calculateTotalPortfolioValue(address: String, masUsdValue: BigDecimal, masPrice: Double) {
+        viewModelScope.launch {
+            try {
+                var totalValue = masUsdValue
+                
+                // Fetch ETH price for WETH.e
+                val ethPrice = fetchEthPrice() ?: BigDecimal("4000")
+                
+                // Calculate value of each token
+                for (token in supportedTokens) {
+                    val balance = getTokenBalance(address, token.contractAddress, token.decimals)
+                    if (balance > BigDecimal.ZERO) {
+                        val price = when (token.symbol) {
+                            "WMAS" -> BigDecimal(masPrice.toString())
+                            "USDC.e", "DAI.e" -> BigDecimal("1.0")
+                            "WETH.e" -> ethPrice
+                            else -> token.defaultPrice
+                        }
+                        val tokenValue = balance.multiply(price)
+                        totalValue = totalValue.add(tokenValue)
+                        android.util.Log.d("DashboardVM", "${token.symbol}: $balance * $price = $tokenValue")
+                    }
+                }
+                
+                android.util.Log.d("DashboardVM", "Total portfolio value: $totalValue")
+                _uiState.update { it.copy(totalPortfolioValue = totalValue) }
+                
+            } catch (e: Exception) {
+                android.util.Log.e("DashboardVM", "Error calculating portfolio value", e)
+                // If calculation fails, just use MAS value
+                _uiState.update { it.copy(totalPortfolioValue = masUsdValue) }
+            }
+        }
+    }
+    
+    /**
+     * Fetch ETH price from CoinPaprika
+     */
+    private suspend fun fetchEthPrice(): BigDecimal? = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url("https://api.coinpaprika.com/v1/tickers/eth-ethereum")
+                .get()
+                .build()
+            
+            httpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: return@withContext null
+                    val json = JSONObject(body)
+                    val quotes = json.optJSONObject("quotes")
+                    val usd = quotes?.optJSONObject("USD")
+                    val price = usd?.optDouble("price") ?: return@withContext null
+                    return@withContext BigDecimal(price.toString())
+                }
+            }
+            null
+        } catch (e: Exception) {
+            android.util.Log.e("DashboardVM", "Error fetching ETH price: ${e.message}")
+            null
+        }
+    }
+    
+    /**
+     * Get balance of an ERC20 token
+     */
+    private suspend fun getTokenBalance(
+        userAddress: String,
+        contractAddress: String,
+        decimals: Int
+    ): BigDecimal = withContext(Dispatchers.IO) {
+        try {
+            // Build parameter for balanceOf: string(address)
+            val buffer = java.io.ByteArrayOutputStream()
+            val addrBytes = userAddress.toByteArray(Charsets.UTF_8)
+            val lenBytes = ByteBuffer.allocate(4)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .putInt(addrBytes.size)
+                .array()
+            buffer.write(lenBytes)
+            buffer.write(addrBytes)
+            
+            val bytes = buffer.toByteArray()
+            val parameter = JSONArray().apply {
+                bytes.forEach { put(it.toInt() and 0xFF) }
+            }
+            
+            val requestBody = JSONObject().apply {
+                put("jsonrpc", "2.0")
+                put("id", 1)
+                put("method", "execute_read_only_call")
+                put("params", JSONArray().apply {
+                    put(JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("target_address", contractAddress)
+                            put("target_function", "balanceOf")
+                            put("parameter", parameter)
+                            put("max_gas", 100000000)
+                            put("caller_address", JSONObject.NULL)
+                            put("coins", JSONObject.NULL)
+                            put("fee", JSONObject.NULL)
+                        })
+                    })
+                })
+            }.toString()
+            
+            val request = Request.Builder()
+                .url("https://mainnet.massa.net/api/v2")
+                .post(requestBody.toRequestBody("application/json".toMediaTypeOrNull()))
+                .build()
+            
+            httpClient.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+                
+                if (response.isSuccessful && responseBody.contains("\"result\"")) {
+                    val json = JSONObject(responseBody)
+                    
+                    if (json.has("result")) {
+                        val resultArray = json.optJSONArray("result")
+                        if (resultArray != null && resultArray.length() > 0) {
+                            val firstResult = resultArray.getJSONObject(0)
+                            val resultObj = firstResult.optJSONObject("result")
+                            
+                            if (resultObj != null && resultObj.has("Ok")) {
+                                val okArray = resultObj.optJSONArray("Ok")
+                                if (okArray != null && okArray.length() > 0) {
+                                    // Parse u256 balance (little-endian)
+                                    val balanceBytes = ByteArray(minOf(okArray.length(), 32))
+                                    for (i in balanceBytes.indices) {
+                                        balanceBytes[i] = (okArray.getInt(i) and 0xFF).toByte()
+                                    }
+                                    
+                                    // Convert from little-endian to BigInteger
+                                    val reversed = balanceBytes.reversedArray()
+                                    val rawBalance = BigInteger(1, reversed)
+                                    
+                                    // Convert to decimal
+                                    return@withContext BigDecimal(rawBalance)
+                                        .divide(BigDecimal.TEN.pow(decimals), decimals, RoundingMode.DOWN)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            BigDecimal.ZERO
+        } catch (e: Exception) {
+            android.util.Log.e("DashboardVM", "Error getting token balance for $contractAddress: ${e.message}")
+            BigDecimal.ZERO
+        }
     }
 }
 
 data class DashboardState(
     val balance: String = "0",
     val usdValue: String = "0",
+    val totalPortfolioValue: BigDecimal = BigDecimal.ZERO, // Total USD value of all tokens
     val currentPrice: Double = 0.0,
     val priceChange24h: Double = 0.0,
     val massaStats: MassaStats? = null,
@@ -143,5 +362,8 @@ data class DashboardState(
     val recentTransactions: List<Transaction> = emptyList(),
     val isLoading: Boolean = true,
     val error: String? = null,
-    val activeWallet: String? = null
+    val activeWallet: String? = null,
+    val activeAccountName: String = "Main Account",
+    val activeAccountColor: String = "#2196F3",
+    val accountCount: Int = 1
 )
