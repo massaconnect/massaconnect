@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -292,6 +293,15 @@ class NFTRepository @Inject constructor(
     private var lastCacheTime = 0L
     private val CACHE_DURATION_MS = 30 * 1000L // 30 seconds for testing
     
+    /**
+     * Clears the NFT cache to force a fresh fetch on next call
+     */
+    fun clearCache() {
+        nftCache.clear()
+        lastCacheTime = 0L
+        android.util.Log.d("NFTRepository", "NFT cache cleared")
+    }
+    
     fun getNFTs(address: String): Flow<Result<List<NFT>>> = flow {
         try {
             emit(Result.Loading)
@@ -321,23 +331,26 @@ class NFTRepository @Inject constructor(
             if (allNfts.isEmpty()) {
                 val collections = getAllCollections()
                 
-                // Query all collections in parallel using coroutines
-                coroutineScope {
+                // Query all collections in parallel using supervisorScope (won't cancel all on single failure)
+                supervisorScope {
                     val results = collections.map { collection ->
                         async(Dispatchers.IO) {
                             try {
                                 queryNFTContract(address, collection)
                             } catch (e: Exception) {
                                 android.util.Log.w("NFTRepository", "Error querying ${collection.name}: ${e.message}")
-                                emptyList()
+                                emptyList<NFT>()
                             }
                         }
                     }
                     
-                    // Collect results
-                    results.forEach { deferred ->
-                        val nftsFromContract = deferred.await()
-                        allNfts.addAll(nftsFromContract)
+                    // Collect all results at once - faster than sequential
+                    try {
+                        results.awaitAll().forEach { nftsFromContract ->
+                            allNfts.addAll(nftsFromContract)
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("NFTRepository", "Some collection queries failed: ${e.message}")
                     }
                 }
             }
@@ -556,11 +569,11 @@ class NFTRepository @Inject constructor(
             val maxTokenId = findHighestTokenId(collection)
             android.util.Log.d("NFTRepository", "Highest existing token ID: $maxTokenId")
             
-            // Scan in batches of 20 tokens in parallel for speed
-            val batchSize = 20
+            // Scan in batches of 40 tokens in parallel for maximum speed
+            val batchSize = 40
             val foundTokens = java.util.concurrent.ConcurrentHashMap<Int, String>()
             
-            coroutineScope {
+            supervisorScope {
                 for (batchStart in maxTokenId downTo 1 step batchSize) {
                     // Check if we already found all tokens
                     if (foundTokens.size >= balance) break
@@ -575,13 +588,17 @@ class NFTRepository @Inject constructor(
                                     android.util.Log.d("NFTRepository", "Found owned token: $tokenId owned by $owner")
                                 }
                             } catch (e: Exception) {
-                                // Token might not exist
+                                // Token might not exist, ignore
                             }
                         }
                     }
                     
-                    // Wait for this batch to complete
-                    batchJobs.forEach { it.await() }
+                    // Wait for batch to complete using awaitAll for speed
+                    try {
+                        batchJobs.awaitAll()
+                    } catch (e: Exception) {
+                        // Some jobs may fail, that's OK
+                    }
                     
                     // Check if we found enough
                     if (foundTokens.size >= balance) break

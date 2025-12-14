@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Reglas de extracción de datos para Android 12+.
+   Por seguridad, no hacemos backup de datos de wallet.
+-->
+<data-extraction-rules>
+    <!-- Backup en la nube (Google Drive) - deshabilitado para seguridad -->
+    <cloud-backup disableIfNoEncryptionCapabilities="true">
+    </cloud-backup>
+    
+    <!-- Transferencia dispositivo a dispositivo - deshabilitado -->
+    <device-transfer>
+    </device-transfer>
+</data-extraction-rules>

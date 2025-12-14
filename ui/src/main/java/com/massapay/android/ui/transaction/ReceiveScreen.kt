@@ -107,6 +107,12 @@ fun ReceiveScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
+        // Detect theme for proper styling
+        val bgColor = MaterialTheme.colorScheme.background
+        val isDarkTheme = (bgColor.red * 0.299f + bgColor.green * 0.587f + bgColor.blue * 0.114f) < 0.5f
+        val iconContainerColor = if (isDarkTheme) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else androidx.compose.ui.graphics.Color.Black
+        val iconTintColor = androidx.compose.ui.graphics.Color.White
+        
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -145,9 +151,12 @@ fun ReceiveScreen(
             // Address Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                ),
+                elevation = CardDefaults.cardElevation(
+                    defaultElevation = if (isDarkTheme) 0.dp else 4.dp
                 )
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -156,16 +165,16 @@ fun ReceiveScreen(
                         modifier = Modifier.padding(bottom = 12.dp)
                     ) {
                         Surface(
-                            modifier = Modifier.size(40.dp),
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                            modifier = Modifier.size(44.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = iconContainerColor
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     Icons.Outlined.AccountBalanceWallet,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(22.dp)
+                                    tint = iconTintColor,
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                         }
@@ -223,9 +232,12 @@ fun ReceiveScreen(
 }            // Optional Amount Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                ),
+                elevation = CardDefaults.cardElevation(
+                    defaultElevation = if (isDarkTheme) 0.dp else 4.dp
                 )
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -234,16 +246,16 @@ fun ReceiveScreen(
                         modifier = Modifier.padding(bottom = 12.dp)
                     ) {
                         Surface(
-                            modifier = Modifier.size(40.dp),
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f)
+                            modifier = Modifier.size(44.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = iconContainerColor
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     Icons.Outlined.RequestQuote,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.secondary,
-                                    modifier = Modifier.size(22.dp)
+                                    tint = iconTintColor,
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                         }

@@ -477,7 +477,7 @@ fun SettingsScreen(
                     ModernSettingsItem(
                         icon = Icons.Outlined.Info,
                         title = "MassaPay",
-                        subtitle = "Version 1.1.0 - Tap to view details",
+                        subtitle = "Version 1.2.0 - Tap to view details",
                         onClick = { showAboutDialog = true }
                     )
                 }
@@ -505,7 +505,7 @@ fun SettingsScreen(
                                         )
                                     )
                                     Text(
-                                        text = "Version 1.1.0",
+                                        text = "Version 1.2.0",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -606,8 +606,20 @@ fun SettingsScreen(
                 title = "Danger Zone",
                 titleColor = MaterialTheme.colorScheme.error
             ) {
-                ModernSettingsCard(
-                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                // Detect theme for proper styling
+                val bgColor = MaterialTheme.colorScheme.background
+                val isDarkTheme = (bgColor.red * 0.299f + bgColor.green * 0.587f + bgColor.blue * 0.114f) < 0.5f
+                
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                    elevation = CardDefaults.cardElevation(
+                        defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+                    )
                 ) {
                     ModernSettingsItem(
                         icon = Icons.Outlined.DeleteForever,
@@ -847,16 +859,22 @@ fun SettingsSection(
 
 @Composable
 fun ModernSettingsCard(
-    containerColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+    containerColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.surfaceVariant,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    // Detect if dark theme based on background color
+    val bgColor = MaterialTheme.colorScheme.background
+    val isDarkTheme = (bgColor.red * 0.299f + bgColor.green * 0.587f + bgColor.blue * 0.114f) < 0.5f
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = containerColor
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+        )
     ) {
         Column {
             content()
@@ -874,6 +892,12 @@ fun ModernSettingsItem(
     textColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
     showArrow: Boolean = true
 ) {
+    // Detect if dark theme based on background color
+    val bgColor = MaterialTheme.colorScheme.background
+    val isDarkTheme = (bgColor.red * 0.299f + bgColor.green * 0.587f + bgColor.blue * 0.114f) < 0.5f
+    val iconContainerColor = if (isDarkTheme) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else Color.Black
+    val iconTintColor = Color.White
+    
     Surface(
         onClick = { onClick?.invoke() },
         modifier = Modifier.fillMaxWidth(),
@@ -889,7 +913,7 @@ fun ModernSettingsItem(
             Surface(
                 modifier = Modifier.size(44.dp),
                 shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                color = iconContainerColor
             ) {
                 Box(
                     contentAlignment = Alignment.Center,
@@ -898,7 +922,7 @@ fun ModernSettingsItem(
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = textColor,
+                        tint = iconTintColor,
                         modifier = Modifier.size(24.dp)
                     )
                 }

@@ -104,42 +104,39 @@ class PriceRepository @Inject constructor(
 
     // Get complete Massa statistics from CoinPaprika
     suspend fun getMassaStats(): Flow<Result<MassaStats>> = flow {
-        try {
-            android.util.Log.d("PriceRepository", "Fetching Massa stats from CoinPaprika...")
-            val response = coinPaprikaApi.getTicker()
-            android.util.Log.d("PriceRepository", "Response received: rank=${response.rank}, price=${response.quotes.usd.price}")
-            
-            val usdQuote = response.quotes.usd
-            
-            val stats = MassaStats(
-                price = usdQuote.price,
-                percentChange24h = usdQuote.percentChange24h,
-                percentChange7d = usdQuote.percentChange7d,
-                percentChange30d = usdQuote.percentChange30d,
-                volume24h = usdQuote.volume24h,
-                marketCap = usdQuote.marketCap,
-                athPrice = usdQuote.athPrice,
-                percentFromAth = usdQuote.percentFromAth,
-                rank = response.rank,
-                totalSupply = response.totalSupply,
-                lastUpdated = response.lastUpdated
+        android.util.Log.d("PriceRepository", "Fetching Massa stats from CoinPaprika...")
+        val response = coinPaprikaApi.getTicker()
+        android.util.Log.d("PriceRepository", "Response received: rank=${response.rank}, price=${response.quotes.usd.price}")
+        
+        val usdQuote = response.quotes.usd
+        
+        val stats = MassaStats(
+            price = usdQuote.price,
+            percentChange24h = usdQuote.percentChange24h,
+            percentChange7d = usdQuote.percentChange7d,
+            percentChange30d = usdQuote.percentChange30d,
+            volume24h = usdQuote.volume24h,
+            marketCap = usdQuote.marketCap,
+            athPrice = usdQuote.athPrice,
+            percentFromAth = usdQuote.percentFromAth,
+            rank = response.rank,
+            totalSupply = response.totalSupply,
+            lastUpdated = response.lastUpdated
+        )
+        
+        android.util.Log.d("PriceRepository", "Stats created successfully")
+        emit(Result.Success(stats))
+        
+        // Cache the current price
+        priceCacheDao.insertPrice(
+            PriceCache(
+                coinId = "massa",
+                usdPrice = usdQuote.price,
+                timestamp = System.currentTimeMillis()
             )
-            
-            android.util.Log.d("PriceRepository", "Stats created successfully")
-            emit(Result.Success(stats))
-            
-            // Cache the current price
-            priceCacheDao.insertPrice(
-                PriceCache(
-                    coinId = "massa",
-                    usdPrice = usdQuote.price,
-                    timestamp = System.currentTimeMillis()
-                )
-            )
-        } catch (e: Exception) {
-            android.util.Log.e("PriceRepository", "Error fetching Massa stats: ${e.message}", e)
-            e.printStackTrace()
-            emit(Result.Error(e))
-        }
+        )
+    }.catch { e ->
+        android.util.Log.e("PriceRepository", "Error fetching Massa stats: ${e.message}")
+        // Don't emit error in catch to avoid type mismatch - error is logged and flow completes empty
     }
 }

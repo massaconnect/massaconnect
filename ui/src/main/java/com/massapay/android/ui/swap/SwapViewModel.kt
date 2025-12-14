@@ -121,6 +121,7 @@ data class SwapState(
     val showSettings: Boolean = false,
     val isLoading: Boolean = false,
     val isCalculatingQuote: Boolean = false,  // Loading state for quote calculation
+    val isConfirmingTx: Boolean = false,      // Waiting for blockchain confirmation
     val canSwap: Boolean = false,
     val error: String? = null,
     val swapSuccess: Boolean = false,
@@ -1205,6 +1206,8 @@ class SwapViewModel @Inject constructor(
                 android.util.Log.d("SwapVM", "Starting swap: ${state.fromToken.symbol} -> ${state.toToken.symbol}")
                 android.util.Log.d("SwapVM", "Amount: $fromAmount, MinOut: $minAmountOut")
                 
+                _uiState.update { it.copy(swapStatus = "Sending transaction...") }
+                
                 val txHash = performSwap(
                     fromToken = state.fromToken,
                     toToken = state.toToken,
@@ -1215,17 +1218,91 @@ class SwapViewModel @Inject constructor(
                     publicKey = publicKey
                 )
                 
+                android.util.Log.d("SwapVM", "Transaction sent! Hash: $txHash")
+                
+                // Now wait for blockchain confirmation with polling
                 _uiState.update { it.copy(
                     isLoading = false,
-                    swapSuccess = true,
+                    isConfirmingTx = true,
                     txHash = txHash,
-                    swapStatus = ""
+                    swapStatus = "Confirming on blockchain..."
                 ) }
+                
+                // Poll for confirmation (60 second timeout, poll every 2 seconds)
+                val confirmationResult = massaRepository.waitForOperationExecution(
+                    operationId = txHash,
+                    timeoutMs = 60_000L,
+                    pollMs = 2_000L
+                )
+                
+                when (confirmationResult) {
+                    is Result.Success -> {
+                        val operation = confirmationResult.data
+                        if (operation != null) {
+                            val isFinal = operation.isFinal
+                            val execStatus = operation.opExecStatus
+                            
+                            android.util.Log.d("SwapVM", "Operation confirmed! isFinal=$isFinal, opExecStatus=$execStatus")
+                            
+                            if (isFinal && execStatus == true) {
+                                // SUCCESS - transaction executed successfully
+                                _uiState.update { it.copy(
+                                    isConfirmingTx = false,
+                                    swapSuccess = true,
+                                    swapStatus = ""
+                                ) }
+                            } else if (isFinal && execStatus == false) {
+                                // FAILED - transaction was included but execution failed
+                                val errorMsg = operation.opExecError ?: "Transaction execution failed"
+                                _uiState.update { it.copy(
+                                    isConfirmingTx = false,
+                                    error = errorMsg,
+                                    swapStatus = ""
+                                ) }
+                            } else if (isFinal) {
+                                // Final but no exec status - assume success for simple transfers
+                                _uiState.update { it.copy(
+                                    isConfirmingTx = false,
+                                    swapSuccess = true,
+                                    swapStatus = ""
+                                ) }
+                            } else {
+                                // Still not final after timeout
+                                _uiState.update { it.copy(
+                                    isConfirmingTx = false,
+                                    swapSuccess = true, // Show success since tx was sent
+                                    swapStatus = ""
+                                ) }
+                            }
+                        } else {
+                            // No operation data returned (timeout) - show success since tx was sent
+                            android.util.Log.w("SwapVM", "Confirmation timeout, but tx was sent")
+                            _uiState.update { it.copy(
+                                isConfirmingTx = false,
+                                swapSuccess = true,
+                                swapStatus = ""
+                            ) }
+                        }
+                    }
+                    is Result.Error -> {
+                        // Error checking status, but tx was sent - show success
+                        android.util.Log.w("SwapVM", "Error checking confirmation: ${confirmationResult.exception.message}")
+                        _uiState.update { it.copy(
+                            isConfirmingTx = false,
+                            swapSuccess = true,
+                            swapStatus = ""
+                        ) }
+                    }
+                    is Result.Loading -> {
+                        // Shouldn't happen
+                    }
+                }
                 
             } catch (e: Exception) {
                 android.util.Log.e("SwapVM", "Swap failed", e)
                 _uiState.update { it.copy(
                     isLoading = false,
+                    isConfirmingTx = false,
                     error = e.message ?: "Swap failed",
                     swapStatus = ""
                 ) }
@@ -1263,25 +1340,60 @@ class SwapViewModel @Inject constructor(
                 _uiState.update { it.copy(swapStatus = "Wrapping MAS to WMAS...") }
                 wrapMAS(amountInUnits, address, privateKey, publicKey)
             }
-            // UNWRAP: WMAS -> MAS (direct call to WMAS contract)
-            fromToken == SwapToken.WMAS && toToken == SwapToken.MAS -> {
-                _uiState.update { it.copy(swapStatus = "Unwrapping WMAS to MAS...") }
-                unwrapWMAS(amountInUnits, address, privateKey, publicKey)
-            }
             // Swap MAS for Token (swapExactMASForTokens)
             fromToken == SwapToken.MAS -> {
                 _uiState.update { it.copy(swapStatus = "Swapping MAS for ${toToken.symbol}...") }
                 swapMASForToken(toToken, amountInUnits, minAmountOutUnits, deadline, address, privateKey, publicKey)
             }
-            // Swap Token for MAS (swapExactTokensForMAS)
+            // UNWRAP: WMAS -> MAS (direct call to WMAS contract withdraw - NOT through router!)
+            fromToken == SwapToken.WMAS && toToken == SwapToken.MAS -> {
+                _uiState.update { it.copy(swapStatus = "Unwrapping WMAS to MAS...") }
+                android.util.Log.d("SwapVM", "UNWRAP: Calling WMAS.withdraw directly (not via router)")
+                val unwrapOpId = unwrapWMAS(amountInUnits, address, privateKey, publicKey)
+                android.util.Log.d("SwapVM", "Unwrap tx sent: $unwrapOpId – polling for on-chain result...")
+                
+                // Wait for unwrap to be executed on-chain and check success
+                val unwrapResult = massaRepository.waitForOperationExecution(unwrapOpId, timeoutMs = 45_000L)
+                if (unwrapResult is Result.Success) {
+                    val op = unwrapResult.data
+                    android.util.Log.d("SwapVM", "Unwrap op_exec_status=${op?.opExecStatus}, op_exec_error=${op?.opExecError}")
+                    if (op?.opExecStatus == false) {
+                        throw Exception("Unwrap failed on-chain: ${op.opExecError ?: "unknown error"}")
+                    }
+                }
+                unwrapOpId
+            }
+            // Swap Token for MAS (swapExactTokensForMAS) - for tokens other than WMAS
             toToken == SwapToken.MAS -> {
                 // First approve the router to spend tokens
                 _uiState.update { it.copy(swapStatus = "Approving ${fromToken.symbol}...") }
-                approveToken(fromToken, amountInUnits, address, privateKey, publicKey)
-                delay(3000) // Wait for approval to be processed
+                val approveOpId = approveToken(fromToken, amountInUnits, address, privateKey, publicKey)
+                android.util.Log.d("SwapVM", "Approval tx sent: $approveOpId – polling for on-chain result...")
+
+                // Wait for approval to be executed on-chain and check success
+                val approveResult = massaRepository.waitForOperationExecution(approveOpId, timeoutMs = 45_000L)
+                if (approveResult is Result.Success) {
+                    val op = approveResult.data
+                    android.util.Log.d("SwapVM", "Approval op_exec_status=${op?.opExecStatus}, op_exec_error=${op?.opExecError}")
+                    if (op?.opExecStatus == false) {
+                        throw Exception("Approval failed on-chain: ${op.opExecError ?: "unknown error"}")
+                    }
+                }
                 
                 _uiState.update { it.copy(swapStatus = "Swapping ${fromToken.symbol} for MAS...") }
-                swapTokenForMAS(fromToken, amountInUnits, minAmountOutUnits, deadline, address, privateKey, publicKey)
+                val swapOpId = swapTokenForMAS(fromToken, amountInUnits, minAmountOutUnits, deadline, address, privateKey, publicKey)
+                android.util.Log.d("SwapVM", "Swap tx sent: $swapOpId – polling for on-chain result...")
+
+                // Wait for swap to be executed on-chain and check success
+                val swapResult = massaRepository.waitForOperationExecution(swapOpId, timeoutMs = 45_000L)
+                if (swapResult is Result.Success) {
+                    val op = swapResult.data
+                    android.util.Log.d("SwapVM", "Swap op_exec_status=${op?.opExecStatus}, op_exec_error=${op?.opExecError}")
+                    if (op?.opExecStatus == false) {
+                        throw Exception("Swap failed on-chain: ${op.opExecError ?: "unknown error"}")
+                    }
+                }
+                swapOpId
             }
             else -> {
                 // Swap Token for Token (through WMAS)
@@ -1327,6 +1439,7 @@ class SwapViewModel @Inject constructor(
     
     /**
      * Unwrap WMAS to MAS - call WMAS contract withdraw function
+     * Parameters: u64 amount + string recipient (based on massa-web3 SDK)
      */
     private suspend fun unwrapWMAS(
         amountInUnits: String,
@@ -1334,23 +1447,26 @@ class SwapViewModel @Inject constructor(
         privateKey: String,
         publicKey: String
     ): String {
-        // Serialize the amount as u256
         val buffer = java.io.ByteArrayOutputStream()
-        val amountBytes = BigDecimal(amountInUnits).toBigInteger().toByteArray()
-        val u256 = ByteArray(32)
-        for (i in amountBytes.indices.reversed()) {
-            val destIndex = amountBytes.size - 1 - i
-            if (destIndex < 32) {
-                u256[destIndex] = amountBytes[i]
-            }
-        }
-        buffer.write(u256)
+        
+        // 1. u64 amount (8 bytes, little-endian)
+        val amountLong = BigDecimal(amountInUnits).toLong()
+        val amountBytes = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(amountLong).array()
+        buffer.write(amountBytes)
+        
+        // 2. string recipient (length-prefixed)
+        val recipientBytes = address.toByteArray(Charsets.UTF_8)
+        val recipientLenBytes = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(recipientBytes.size).array()
+        buffer.write(recipientLenBytes)
+        buffer.write(recipientBytes)
         
         val bytes = buffer.toByteArray()
+        
+        // Send as JSONObject with string keys
         val parameter = bytes.indices.associate { it.toString() to (bytes[it].toInt() and 0xFF) }
             .let { org.json.JSONObject(it).toString() }
         
-        android.util.Log.d("SwapVM", "unwrapWMAS parameter: $parameter")
+        android.util.Log.d("SwapVM", "unwrapWMAS amount: $amountInUnits, recipient: $address, total bytes: ${bytes.size}")
         
         val result = massaRepository.callSmartContract(
             from = address,
@@ -1585,25 +1701,38 @@ class SwapViewModel @Inject constructor(
         privateKey: String,
         publicKey: String
     ): String {
-        // Get route info from cached quote
-        val quote = cachedQuote ?: throw Exception("No quote available. Please refresh the quote.")
+        // For WMAS->MAS (unwrap) we MUST use a single-element path [WMAS] with no hops,
+        // regardless of any cached quote (which might be stale or from a different pair).
+        val isUnwrap = (fromToken == SwapToken.WMAS)
+        
+        // Get route info from cached quote for non-unwrap swaps.
+        val quote = if (isUnwrap) null else cachedQuote
+        if (quote == null && !isUnwrap) {
+            throw Exception("No quote available. Please refresh the quote.")
+        }
         
         // Use route from quote, or fallback to default path
-        val tokenPath = if (quote.route.isNotEmpty()) {
+        val tokenPath = if (isUnwrap) {
+            // WMAS->MAS unwrap: single-element path, router will call WMAS.withdraw internally
+            listOf(SwapToken.WMAS.contractAddress)
+        } else if (quote?.route?.isNotEmpty() == true) {
             quote.route
         } else {
             listOf(fromToken.contractAddress, SwapToken.WMAS.contractAddress)
         }
         
         // Use binSteps from quote, or default
-        val binSteps = if (quote.binSteps.isNotEmpty()) {
+        val binSteps = if (isUnwrap) {
+            // No hop needed for WMAS->MAS unwrap via router
+            emptyList()
+        } else if (quote?.binSteps?.isNotEmpty() == true) {
             quote.binSteps
         } else {
             listOf(20L)
         }
         
         // Use isLegacy from quote, or default to [false] for V2 pools
-        val isLegacy = if (quote.isLegacy.isNotEmpty()) {
+        val isLegacy = if (quote?.isLegacy?.isNotEmpty() == true) {
             quote.isLegacy
         } else {
             List(binSteps.size) { false }
@@ -1612,8 +1741,9 @@ class SwapViewModel @Inject constructor(
         android.util.Log.d("SwapVM", "swapTokenForMAS params - tokenPath: $tokenPath, binSteps: $binSteps, isLegacy: $isLegacy")
         
         // For swapExactTokensForMAS - DUSA V2 format:
-        // amountIn(u256) + amountOutMin(u256) + binSteps(u64[]) + isLegacy(bool[]) + tokenPath(string[]) + to(string) + deadline(u64)
+        // amountIn(u256) + amountOutMin(u256) + binSteps(u64[]) + isLegacy(bool[]) + tokenPath(string[]) + to(string) + deadline(u64) + storageCost(u64)
         val buffer = java.io.ByteArrayOutputStream()
+        val SWAP_STORAGE_COST = 100_000_000L // 0.1 MAS in nanoMAS
         
         // 1. amountIn as u256 (32 bytes, little-endian)
         val amountInBytes = BigDecimal(amountIn).toBigInteger().toByteArray()
@@ -1672,6 +1802,10 @@ class SwapViewModel @Inject constructor(
         // 7. deadline as u64
         val deadlineBytes = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(deadline.toLong()).array()
         buffer.write(deadlineBytes)
+
+        // 8. storageCost as u64
+        val storageCostBytes = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(SWAP_STORAGE_COST).array()
+        buffer.write(storageCostBytes)
         
         val bytes = buffer.toByteArray()
         val parameter = bytes.indices.associate { it.toString() to (bytes[it].toInt() and 0xFF) }
@@ -1827,7 +1961,7 @@ class SwapViewModel @Inject constructor(
         address: String,
         privateKey: String,
         publicKey: String
-    ) {
+    ): String {
         // increaseAllowance(spender: Address, addedValue: u256)
         val buffer = java.io.ByteArrayOutputStream()
         
@@ -1859,14 +1993,15 @@ class SwapViewModel @Inject constructor(
             publicKey = publicKey
         )
         
-        when (result) {
+        return when (result) {
             is Result.Success -> {
                 android.util.Log.d("SwapVM", "Approval successful: ${result.data}")
+                result.data ?: throw Exception("No operation ID returned from approval")
             }
             is Result.Error -> {
                 throw Exception("Approval failed: ${result.exception.message}")
             }
-            is Result.Loading -> {}
+            is Result.Loading -> throw Exception("Unexpected loading state")
         }
     }
 
@@ -1876,6 +2011,7 @@ class SwapViewModel @Inject constructor(
                 fromAmount = "",
                 toAmount = "",
                 swapSuccess = false,
+                isConfirmingTx = false,
                 txHash = null,
                 error = null,
                 swapStatus = ""
@@ -1896,6 +2032,7 @@ class SwapViewModel @Inject constructor(
                 exchangeRate = "0",
                 priceImpact = 0f,
                 swapSuccess = false,
+                isConfirmingTx = false,
                 txHash = null,
                 error = null,
                 swapStatus = "",

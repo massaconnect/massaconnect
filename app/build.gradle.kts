@@ -28,11 +28,16 @@ android {
 
     defaultConfig {
         applicationId = "com.massapay.android"
-        minSdk = 26
-        targetSdk = 35
-        versionCode = 4
-        versionName = "1.1.0"
+        minSdk = 26  // Android 8.0+ (cubre ~95% de dispositivos activos)
+        targetSdk = 34  // Target 34 para cumplir requisitos de Google Play 2024
+        versionCode = 5
+        versionName = "1.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        
+        // Soporte para todas las arquitecturas (dispositivos físicos y emuladores)
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+        }
     }
 
     signingConfigs {
@@ -54,9 +59,21 @@ android {
         }
         debug {
             isMinifyEnabled = false
-            applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
+            // IMPORTANTE: Sin applicationIdSuffix para que debug y release usen el mismo ID
+            // Esto permite actualizar de debug a release sin desinstalar
+            signingConfig = signingConfigs.getByName("release")  // Misma firma que release
             buildConfigField("String", "WALLETCONNECT_PROJECT_ID", "\"${localProperties.getProperty("WALLETCONNECT_PROJECT_ID", "")}\"")
+        }
+    }
+
+    // Paquete universal compatible con todos los dispositivos y emuladores
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/DEPENDENCIES"
+        }
+        jniLibs {
+            useLegacyPackaging = true  // Mejor compatibilidad con dispositivos antiguos
         }
     }
 

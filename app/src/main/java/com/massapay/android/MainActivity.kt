@@ -28,6 +28,11 @@ import androidx.core.view.WindowCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.tween
 import kotlinx.coroutines.delay
 import com.massapay.android.security.storage.SecureStorage
 import com.massapay.android.ui.dashboard.DashboardScreen
@@ -151,7 +156,31 @@ class MainActivity : FragmentActivity() {
                 
                 NavHost(
                     navController = navController,
-                    startDestination = startDestination
+                    startDestination = startDestination,
+                    enterTransition = {
+                        slideInHorizontally(
+                            initialOffsetX = { fullWidth -> fullWidth },
+                            animationSpec = tween(350)
+                        ) + fadeIn(animationSpec = tween(350))
+                    },
+                    exitTransition = {
+                        slideOutHorizontally(
+                            targetOffsetX = { fullWidth -> -fullWidth / 4 },
+                            animationSpec = tween(350)
+                        ) + fadeOut(animationSpec = tween(200))
+                    },
+                    popEnterTransition = {
+                        slideInHorizontally(
+                            initialOffsetX = { fullWidth -> -fullWidth / 4 },
+                            animationSpec = tween(350)
+                        ) + fadeIn(animationSpec = tween(350))
+                    },
+                    popExitTransition = {
+                        slideOutHorizontally(
+                            targetOffsetX = { fullWidth -> fullWidth },
+                            animationSpec = tween(350)
+                        ) + fadeOut(animationSpec = tween(200))
+                    }
                 ) {
                     composable("lock") {
                         LockScreen(

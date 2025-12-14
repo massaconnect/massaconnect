@@ -265,6 +265,7 @@ fun DashboardScreen(
         containerColor = backgroundColor,
         contentColor = Color.Transparent
     ) { padding ->
+        // Pull to refresh indicator at top when loading
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -424,6 +425,19 @@ private fun Web3BalanceCard(
 ) {
     // Use totalPortfolioValue if available, otherwise fall back to MAS-only value
     val displayUsdValue = if (totalPortfolioValue > 0) totalPortfolioValue else usdValue
+    val isDarkTheme = androidx.compose.foundation.isSystemInDarkTheme()
+    
+    // Button colors that work in both themes
+    val iconButtonBg = if (isDarkTheme) {
+        Color(0xFF1A1A1A)
+    } else {
+        Color(0xFFEEEEEE) // Light gray in light mode
+    }
+    val iconButtonTint = if (isDarkTheme) {
+        Color.White
+    } else {
+        Color(0xFF333333) // Dark gray in light mode
+    }
     
     Card(
         modifier = Modifier
@@ -431,7 +445,10 @@ private fun Web3BalanceCard(
         colors = CardDefaults.cardColors(
             containerColor = cardBackground
         ),
-        shape = RoundedCornerShape(24.dp)
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+        )
     ) {
         Box(
             modifier = Modifier
@@ -460,33 +477,28 @@ private fun Web3BalanceCard(
                         modifier = Modifier
                             .size(36.dp)
                             .background(
-                                color = MaterialTheme.colorScheme.primaryContainer,
+                                color = iconButtonBg,
                                 shape = androidx.compose.foundation.shape.CircleShape
                             )
                     ) {
                         Icon(
                             Icons.Default.TrendingUp,
                             contentDescription = "View Charts",
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = iconButtonTint,
                             modifier = Modifier.size(20.dp)
                         )
                     }
                 }
                 
-                // Balance in USD (Total Portfolio Value)
+                // Balance in USD (Total Portfolio Value) - Animated Counter
                 if (isLoading) {
-                    Box(
-                        modifier = Modifier
-                            .width(180.dp)
-                            .height(48.dp)
-                            .background(
-                                textSecondary.copy(alpha = shimmerAlpha * 0.2f),
-                                RoundedCornerShape(8.dp)
-                            )
+                    com.massapay.android.ui.components.ShimmerBox(
+                        width = 180.dp,
+                        height = 48.dp
                     )
                 } else {
-                    Text(
-                        "$${String.format("%.2f", displayUsdValue)}",
+                    com.massapay.android.ui.components.AnimatedCurrencyCounter(
+                        targetValue = displayUsdValue,
                         style = MaterialTheme.typography.displaySmall.copy(
                             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                             fontSize = 42.sp
@@ -495,16 +507,11 @@ private fun Web3BalanceCard(
                     )
                 }
                 
-                // MAS Balance with Portfolio button next to it
+                // MAS Balance with Portfolio button next to it - Animated
                 if (isLoading) {
-                    Box(
-                        modifier = Modifier
-                            .width(120.dp)
-                            .height(24.dp)
-                            .background(
-                                textSecondary.copy(alpha = shimmerAlpha * 0.2f),
-                                RoundedCornerShape(8.dp)
-                            )
+                    com.massapay.android.ui.components.ShimmerBox(
+                        width = 120.dp,
+                        height = 24.dp
                     )
                 } else {
                     Row(
@@ -512,12 +519,14 @@ private fun Web3BalanceCard(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            "${String.format("%.4f", balance)} MAS",
+                        com.massapay.android.ui.components.AnimatedCryptoCounter(
+                            targetValue = balance,
+                            symbol = "MAS",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
                             ),
-                            color = textPrimary
+                            color = textPrimary,
+                            decimals = 4
                         )
                         
                         // Portfolio Button - next to MAS balance
@@ -525,7 +534,7 @@ private fun Web3BalanceCard(
                             onClick = onPortfolioClick,
                             modifier = Modifier.height(28.dp),
                             shape = RoundedCornerShape(14.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
+                            color = iconButtonBg
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -535,13 +544,13 @@ private fun Web3BalanceCard(
                                 Icon(
                                     Icons.Default.AccountBalanceWallet,
                                     contentDescription = "Portfolio",
-                                    tint = MaterialTheme.colorScheme.primary,
+                                    tint = iconButtonTint,
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Text(
                                     "Portfolio",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = iconButtonTint
                                 )
                             }
                         }
@@ -720,13 +729,41 @@ private fun QuickActionCard(
     val actualColor = if (enabled) color else color.copy(alpha = 0.4f)
     val actualTextColor = if (enabled) textColor else textColor.copy(alpha = 0.4f)
     
+    // Press animation
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessHigh
+        ),
+        label = "cardScale"
+    )
+    
     Card(
         onClick = { if (enabled) onClick() },
-        modifier = modifier.height(72.dp),
+        modifier = modifier
+            .height(72.dp)
+            .scale(scale)
+            .pointerInput(enabled) {
+                if (enabled) {
+                    detectTapGestures(
+                        onPress = {
+                            isPressed = true
+                            tryAwaitRelease()
+                            isPressed = false
+                        }
+                    )
+                }
+            },
         colors = CardDefaults.cardColors(
             containerColor = cardBackground
         ),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 2.dp,
+            pressedElevation = 0.dp
+        )
     ) {
         Row(
             modifier = Modifier
@@ -734,7 +771,7 @@ private fun QuickActionCard(
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            actualColor.copy(alpha = 0.08f),
+                            actualColor.copy(alpha = 0.1f),
                             actualColor.copy(alpha = 0.02f)
                         )
                     )
@@ -1724,42 +1761,52 @@ private fun ModernNavItem(
     isDarkTheme: Boolean,
     onClick: () -> Unit
 ) {
-    val accentColor = Color(0xFF6366F1)
-    val selectedBg = if (isDarkTheme) accentColor.copy(alpha = 0.15f) else accentColor.copy(alpha = 0.1f)
-    val unselectedColor = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.6f)
+    // Consistent colors - black container with white icon when selected (light mode)
+    val selectedBg = if (isDarkTheme) Color.White else Color.Black
+    val selectedContent = if (isDarkTheme) Color.Black else Color.White
+    val unselectedColor = if (isDarkTheme) Color.White.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.5f)
+    
+    // Animated scale on selection
+    val scale by animateFloatAsState(
+        targetValue = if (isSelected) 1.05f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "navScale"
+    )
     
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
+            .scale(scale)
+            .clip(RoundedCornerShape(14.dp))
             .clickable(
                 onClick = onClick,
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() }
             )
-            .then(
-                if (isSelected) Modifier.background(selectedBg) else Modifier
-            )
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .background(if (isSelected) selectedBg else Color.Transparent)
+            .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = if (isSelected) accentColor else unselectedColor,
-            modifier = Modifier.size(24.dp)
+            tint = if (isSelected) selectedContent else unselectedColor,
+            modifier = Modifier.size(22.dp)
         )
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall.copy(
                 fontWeight = if (isSelected) 
-                    androidx.compose.ui.text.font.FontWeight.SemiBold 
+                    androidx.compose.ui.text.font.FontWeight.Bold 
                 else 
                     androidx.compose.ui.text.font.FontWeight.Normal
             ),
-            color = if (isSelected) accentColor else unselectedColor,
+            color = if (isSelected) selectedContent else unselectedColor,
             maxLines = 1,
-            fontSize = 11.sp
+            fontSize = 10.sp
         )
     }
 }

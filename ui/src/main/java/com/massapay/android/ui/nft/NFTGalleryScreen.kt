@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -36,6 +37,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
@@ -106,7 +109,7 @@ fun NFTGalleryScreen(
                         )
                     }
                     // Refresh button
-                    IconButton(onClick = { viewModel.loadNFTs() }) {
+                    IconButton(onClick = { viewModel.refreshNFTs() }) {
                         Icon(
                             Icons.Default.Refresh, 
                             contentDescription = "Refresh",
@@ -455,16 +458,60 @@ fun NFTCard(
     } else {
         Color.White
     }
+    
+    // Press animation
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessHigh
+        ),
+        label = "nftCardScale"
+    )
+    
+    // Entrance animation
+    var isVisible by remember { mutableStateOf(false) }
+    val animatedAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isVisible) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(400),
+        label = "nftCardAlpha"
+    )
+    val offsetY by androidx.compose.animation.core.animateIntAsState(
+        targetValue = if (isVisible) 0 else 30,
+        animationSpec = androidx.compose.animation.core.tween(400),
+        label = "nftCardOffsetY"
+    )
+    
+    LaunchedEffect(Unit) {
+        isVisible = true
+    }
 
     Card(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(0.8f)
-            .clickable(onClick = onClick),
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                alpha = animatedAlpha
+                translationY = offsetY.toFloat()
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        tryAwaitRelease()
+                        isPressed = false
+                    },
+                    onTap = { onClick() }
+                )
+            },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = cardColor),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+            defaultElevation = if (isDarkTheme) 2.dp else 6.dp,
+            pressedElevation = 0.dp
         )
     ) {
         Column(modifier = Modifier.fillMaxSize()) {

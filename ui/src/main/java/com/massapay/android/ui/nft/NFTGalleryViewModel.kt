@@ -56,6 +56,14 @@ class NFTGalleryViewModel @Inject constructor(
             }
         }
     }
+    
+    /**
+     * Force refresh NFTs by clearing cache first
+     */
+    fun refreshNFTs() {
+        nftRepository.clearCache()
+        loadNFTs()
+    }
 
     fun transferNFT(nft: NFT, toAddress: String) {
         viewModelScope.launch {

@@ -228,7 +228,13 @@ class PortfolioViewModel @Inject constructor(
     private suspend fun fetchRealPrices() {
         try {
             // Get MAS price from CoinPaprika via our PriceRepository
-            val result = priceRepository.getMassaStats().first()
+            // Use firstOrNull with catch to avoid AbortFlowException
+            val result = priceRepository.getMassaStats()
+                .catch { e -> 
+                    android.util.Log.e("PortfolioVM", "Flow error: ${e.message}")
+                    // Don't emit, just log and flow completes empty
+                }
+                .firstOrNull()
             if (result is Result.Success) {
                 val masPrice = BigDecimal(result.data.price.toString())
                 realPrices["MAS"] = masPrice

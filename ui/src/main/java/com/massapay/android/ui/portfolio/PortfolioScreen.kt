@@ -9,12 +9,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -29,12 +32,32 @@ fun PortfolioScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     
-    // Theme colors
+    // Theme colors from MaterialTheme
     val backgroundColor = MaterialTheme.colorScheme.background
-    val cardBackground = MaterialTheme.colorScheme.surfaceVariant
+    val cardColor = MaterialTheme.colorScheme.surfaceVariant
     val textPrimary = MaterialTheme.colorScheme.onBackground
     val textSecondary = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-    val accentColor = MaterialTheme.colorScheme.primary
+    
+    // Theme detection based on background luminance
+    val isDarkTheme = remember(backgroundColor) {
+        (backgroundColor.red * 0.299f + backgroundColor.green * 0.587f + backgroundColor.blue * 0.114f) < 0.5f
+    }
+    
+    // Consistent styling colors
+    val iconContainerColor = if (isDarkTheme) Color.White.copy(alpha = 0.1f) else Color.Black
+    val iconTintColor = Color.White
+    val buttonContainerColor = if (isDarkTheme) Color.White else Color.Black
+    val buttonContentColor = if (isDarkTheme) Color.Black else Color.White
+    
+    // Entrance animation
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(400),
+        label = "contentAlpha"
+    )
 
     // Shimmer animation for loading
     val shimmerTransition = rememberInfiniteTransition(label = "shimmer")
@@ -56,30 +79,38 @@ fun PortfolioScreen(
                         "My Portfolio",
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Bold
-                        ),
-                        color = textPrimary
+                        )
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
-                        Icon(
-                            Icons.Default.ArrowBack,
-                            contentDescription = "Back",
-                            tint = textPrimary
-                        )
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.refresh() }) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "Refresh",
-                            tint = textPrimary
-                        )
+                    // Refresh button with styled container
+                    Surface(
+                        onClick = { viewModel.refresh() },
+                        shape = RoundedCornerShape(12.dp),
+                        color = iconContainerColor,
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Refresh",
+                                tint = iconTintColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = backgroundColor
+                    containerColor = backgroundColor,
+                    titleContentColor = textPrimary,
+                    navigationIconContentColor = textPrimary
                 )
             )
         },
@@ -88,77 +119,129 @@ fun PortfolioScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(padding)
+                .graphicsLayer { alpha = contentAlpha },
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Total Value Card
+            // Total Value Hero Card
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = cardBackground),
-                    shape = RoundedCornerShape(20.dp)
+                    colors = CardDefaults.cardColors(containerColor = cardColor),
+                    shape = RoundedCornerShape(24.dp),
+                    elevation = CardDefaults.cardElevation(
+                        defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+                    )
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
+                        // Icon container
+                        Surface(
+                            modifier = Modifier.size(64.dp),
+                            shape = CircleShape,
+                            color = iconContainerColor
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                Icon(
+                                    Icons.Filled.AccountBalanceWallet,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(32.dp),
+                                    tint = iconTintColor
+                                )
+                            }
+                        }
+                        
                         Text(
                             "Total Portfolio Value",
                             style = MaterialTheme.typography.bodyMedium,
                             color = textSecondary
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
                         
                         if (uiState.isLoading) {
                             Box(
                                 modifier = Modifier
-                                    .width(150.dp)
-                                    .height(40.dp)
+                                    .width(180.dp)
+                                    .height(48.dp)
                                     .background(
                                         textSecondary.copy(alpha = shimmerAlpha * 0.2f),
-                                        RoundedCornerShape(8.dp)
+                                        RoundedCornerShape(12.dp)
                                     )
                             )
                         } else {
                             Text(
                                 "$${String.format("%,.2f", uiState.totalUsdValue.toDouble())}",
-                                style = MaterialTheme.typography.headlineLarge.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 36.sp
+                                style = MaterialTheme.typography.displaySmall.copy(
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = (-1).sp
                                 ),
                                 color = textPrimary
                             )
                         }
                         
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "${uiState.tokens.size} assets",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = textSecondary
-                        )
+                        // Assets count badge
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = buttonContainerColor
+                        ) {
+                            Text(
+                                "${uiState.tokens.size} Assets",
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = buttonContentColor
+                            )
+                        }
                     }
                 }
             }
 
-            // Section Header
+            // Assets Section Header
             item {
-                Text(
-                    "Assets",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = textPrimary,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.padding(vertical = 8.dp)
-                )
+                ) {
+                    Surface(
+                        modifier = Modifier.size(44.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = iconContainerColor
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(
+                                Icons.Outlined.Token,
+                                contentDescription = null,
+                                modifier = Modifier.size(22.dp),
+                                tint = iconTintColor
+                            )
+                        }
+                    }
+                    Text(
+                        "Your Assets",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = textPrimary
+                    )
+                }
             }
 
             // Loading shimmer
             if (uiState.isLoading) {
                 items(5) {
-                    TokenShimmerItem(shimmerAlpha, cardBackground, textSecondary)
+                    TokenShimmerItem(
+                        shimmerAlpha = shimmerAlpha,
+                        cardColor = cardColor,
+                        shimmerColor = textSecondary,
+                        isDarkTheme = isDarkTheme
+                    )
                 }
             }
             // Error state
@@ -166,30 +249,64 @@ fun PortfolioScreen(
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = cardBackground),
-                        shape = RoundedCornerShape(16.dp)
+                        colors = CardDefaults.cardColors(containerColor = cardColor),
+                        shape = RoundedCornerShape(24.dp),
+                        elevation = CardDefaults.cardElevation(
+                            defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+                        )
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            Icon(
-                                Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = Color(0xFFFF9800),
-                                modifier = Modifier.size(48.dp)
+                            Surface(
+                                modifier = Modifier.size(64.dp),
+                                shape = CircleShape,
+                                color = Color(0xFFFF9800).copy(alpha = 0.15f)
+                            ) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                    Icon(
+                                        Icons.Default.Warning,
+                                        contentDescription = null,
+                                        tint = Color(0xFFFF9800),
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                            }
+                            
+                            Text(
+                                "Unable to Load",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.SemiBold
+                                ),
+                                color = textPrimary
                             )
-                            Spacer(modifier = Modifier.height(16.dp))
+                            
                             Text(
                                 uiState.error ?: "Unknown error",
                                 color = textSecondary,
-                                textAlign = TextAlign.Center
+                                textAlign = TextAlign.Center,
+                                style = MaterialTheme.typography.bodyMedium
                             )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = { viewModel.refresh() }) {
-                                Text("Retry")
+                            
+                            Button(
+                                onClick = { viewModel.refresh() },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = buttonContainerColor,
+                                    contentColor = buttonContentColor
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Retry", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -200,32 +317,47 @@ fun PortfolioScreen(
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = cardBackground),
-                        shape = RoundedCornerShape(16.dp)
+                        colors = CardDefaults.cardColors(containerColor = cardColor),
+                        shape = RoundedCornerShape(24.dp),
+                        elevation = CardDefaults.cardElevation(
+                            defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+                        )
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                                .padding(40.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            Icon(
-                                Icons.Default.AccountBalanceWallet,
-                                contentDescription = null,
-                                tint = textSecondary,
-                                modifier = Modifier.size(64.dp)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
+                            Surface(
+                                modifier = Modifier.size(80.dp),
+                                shape = CircleShape,
+                                color = iconContainerColor
+                            ) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                    Icon(
+                                        Icons.Outlined.AccountBalanceWallet,
+                                        contentDescription = null,
+                                        tint = iconTintColor,
+                                        modifier = Modifier.size(40.dp)
+                                    )
+                                }
+                            }
+                            
                             Text(
-                                "No tokens found",
-                                style = MaterialTheme.typography.titleMedium,
+                                "No Tokens Yet",
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.Bold
+                                ),
                                 color = textPrimary
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
+                            
                             Text(
-                                "Your portfolio is empty. Start by receiving some tokens.",
+                                "Your portfolio is empty.\nStart by receiving some tokens.",
                                 color = textSecondary,
-                                textAlign = TextAlign.Center
+                                textAlign = TextAlign.Center,
+                                style = MaterialTheme.typography.bodyMedium
                             )
                         }
                     }
@@ -236,11 +368,19 @@ fun PortfolioScreen(
                 items(uiState.tokens, key = { it.symbol }) { token ->
                     TokenItem(
                         token = token,
-                        cardBackground = cardBackground,
+                        cardColor = cardColor,
                         textPrimary = textPrimary,
-                        textSecondary = textSecondary
+                        textSecondary = textSecondary,
+                        isDarkTheme = isDarkTheme,
+                        iconContainerColor = iconContainerColor,
+                        iconTintColor = iconTintColor
                     )
                 }
+            }
+            
+            // Bottom spacer
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
     }
@@ -249,14 +389,20 @@ fun PortfolioScreen(
 @Composable
 private fun TokenItem(
     token: PortfolioToken,
-    cardBackground: Color,
+    cardColor: Color,
     textPrimary: Color,
-    textSecondary: Color
+    textSecondary: Color,
+    isDarkTheme: Boolean,
+    iconContainerColor: Color,
+    iconTintColor: Color
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = cardBackground),
-        shape = RoundedCornerShape(16.dp)
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+        )
     ) {
         Row(
             modifier = Modifier
@@ -264,21 +410,21 @@ private fun TokenItem(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Token icon
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(token.color.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
+            // Token icon with styled container
+            Surface(
+                modifier = Modifier.size(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                color = token.color.copy(alpha = 0.15f)
             ) {
-                Text(
-                    token.symbol.first().toString(),
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = token.color
-                )
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Text(
+                        token.symbol.first().toString(),
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = token.color
+                    )
+                }
             }
             
             Spacer(modifier = Modifier.width(16.dp))
@@ -288,7 +434,7 @@ private fun TokenItem(
                 Text(
                     token.symbol,
                     style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold
                     ),
                     color = textPrimary
                 )
@@ -304,13 +450,13 @@ private fun TokenItem(
                 Text(
                     token.balanceFormatted,
                     style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold
                     ),
                     color = textPrimary
                 )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
                         "$${String.format("%.2f", token.usdValue.toDouble())}",
@@ -319,14 +465,16 @@ private fun TokenItem(
                     )
                     // Percentage badge
                     Surface(
-                        shape = RoundedCornerShape(4.dp),
+                        shape = RoundedCornerShape(6.dp),
                         color = token.color.copy(alpha = 0.15f)
                     ) {
                         Text(
                             "${String.format("%.1f", token.percentage)}%",
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold
+                            ),
                             color = token.color,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
                 }
@@ -338,13 +486,17 @@ private fun TokenItem(
 @Composable
 private fun TokenShimmerItem(
     shimmerAlpha: Float,
-    cardBackground: Color,
-    shimmerColor: Color
+    cardColor: Color,
+    shimmerColor: Color,
+    isDarkTheme: Boolean
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = cardBackground),
-        shape = RoundedCornerShape(16.dp)
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+        )
     ) {
         Row(
             modifier = Modifier
@@ -355,8 +507,8 @@ private fun TokenShimmerItem(
             // Icon shimmer
             Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(shimmerColor.copy(alpha = shimmerAlpha * 0.3f))
             )
             
@@ -366,18 +518,18 @@ private fun TokenShimmerItem(
             Column(modifier = Modifier.weight(1f)) {
                 Box(
                     modifier = Modifier
-                        .width(80.dp)
+                        .width(70.dp)
                         .height(20.dp)
                         .background(
                             shimmerColor.copy(alpha = shimmerAlpha * 0.3f),
-                            RoundedCornerShape(4.dp)
+                            RoundedCornerShape(6.dp)
                         )
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Box(
                     modifier = Modifier
-                        .width(120.dp)
-                        .height(16.dp)
+                        .width(100.dp)
+                        .height(14.dp)
                         .background(
                             shimmerColor.copy(alpha = shimmerAlpha * 0.2f),
                             RoundedCornerShape(4.dp)
@@ -393,14 +545,14 @@ private fun TokenShimmerItem(
                         .height(20.dp)
                         .background(
                             shimmerColor.copy(alpha = shimmerAlpha * 0.3f),
-                            RoundedCornerShape(4.dp)
+                            RoundedCornerShape(6.dp)
                         )
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Box(
                     modifier = Modifier
-                        .width(50.dp)
-                        .height(16.dp)
+                        .width(80.dp)
+                        .height(14.dp)
                         .background(
                             shimmerColor.copy(alpha = shimmerAlpha * 0.2f),
                             RoundedCornerShape(4.dp)

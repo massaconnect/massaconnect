@@ -16,30 +16,72 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
+// ===========================================
+// DARK COLOR SCHEME - Pure black, minimal grays
+// ===========================================
 private val DarkColorScheme = darkColorScheme(
-    primary = Primary,
-    background = Background,
-    surface = Surface,
-    error = Error,
+    primary = AccentBlue,
     onPrimary = Color.White,
-    onBackground = TextColor,
-    onSurface = TextColor,
-    onError = Color.Black,
-    surfaceVariant = CardBackground,
-    onSurfaceVariant = TextColor
+    primaryContainer = DarkButtonBackground,
+    onPrimaryContainer = Color.White,
+    
+    secondary = AccentPurple,
+    onSecondary = Color.White,
+    secondaryContainer = DarkButtonSecondary,
+    onSecondaryContainer = Color.White,
+    
+    tertiary = AccentCyan,
+    onTertiary = Color.Black,
+    
+    background = DarkBackground,
+    onBackground = DarkTextPrimary,
+    
+    surface = DarkSurface,
+    onSurface = DarkTextPrimary,
+    surfaceVariant = DarkCardBackground,
+    onSurfaceVariant = DarkTextSecondary,
+    
+    outline = DarkBorder,
+    outlineVariant = DarkDivider,
+    
+    error = AccentRed,
+    onError = Color.White,
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color.White
 )
 
+// ===========================================
+// LIGHT COLOR SCHEME - Pure white, black buttons
+// ===========================================
 private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF1A73E8),
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    error = Color(0xFFB3261E),
+    primary = LightButtonBackground,  // Black buttons
     onPrimary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
+    primaryContainer = LightIconButtonBg,       // Light gray for icon button backgrounds
+    onPrimaryContainer = LightIconButtonTint,   // Dark gray icons
+    
+    secondary = AccentPurple,
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFE8DEF8),
+    onSecondaryContainer = Color(0xFF1D192B),
+    
+    tertiary = AccentBlue,
+    onTertiary = Color.White,
+    
+    background = LightBackground,
+    onBackground = LightTextPrimary,
+    
+    surface = LightSurface,
+    onSurface = LightTextPrimary,
+    surfaceVariant = LightCardBackground,
+    onSurfaceVariant = LightTextSecondary,
+    
+    outline = LightBorder,
+    outlineVariant = LightDivider,
+    
+    error = AccentRed,
     onError = Color.White,
-    surfaceVariant = Color(0xFFE7E0EC),
-    onSurfaceVariant = Color(0xFF49454F)
+    errorContainer = Color(0xFFFFDAD6),
+    onErrorContainer = Color(0xFF410002)
 )
 
 @Composable

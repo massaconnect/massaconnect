@@ -11,9 +11,11 @@ import com.massapay.android.core.model.WalletAddress
 import com.massapay.android.core.util.Result
 import com.massapay.android.network.api.MassaApi
 import com.massapay.android.network.model.JsonRpcRequest
+import com.massapay.android.network.model.OperationResponse
 import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters
 import org.bouncycastle.crypto.signers.Ed25519Signer
 import org.json.JSONObject
+import kotlinx.coroutines.delay
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -29,6 +31,42 @@ class MassaRepository @Inject constructor(
     companion object {
         private const val PREF_KEY_PREFIX = "transactions_"
         private const val NANO_MAS_DECIMALS = 9 // 1 MAS = 10^9 nanoMAS
+    }
+
+    suspend fun getOperation(operationId: String): Result<OperationResponse?> {
+        return try {
+            val request = JsonRpcRequest(
+                method = "get_operations",
+                params = listOf(listOf(operationId))
+            )
+            val response = massaApi.getOperations(request)
+            response.error?.let { return Result.Error(Exception(it.message)) }
+            Result.Success(response.result?.firstOrNull())
+        } catch (e: Exception) {
+            Result.Error(e)
+        }
+    }
+
+    suspend fun waitForOperationExecution(
+        operationId: String,
+        timeoutMs: Long = 45_000L,
+        pollMs: Long = 1_500L
+    ): Result<OperationResponse?> {
+        val start = System.currentTimeMillis()
+        while (System.currentTimeMillis() - start < timeoutMs) {
+            when (val res = getOperation(operationId)) {
+                is Result.Success -> {
+                    val op = res.data
+                    if (op?.opExecStatus != null) return Result.Success(op)
+                }
+                is Result.Error -> return res
+                is Result.Loading -> {
+                    // ignore
+                }
+            }
+            delay(pollMs)
+        }
+        return Result.Success(null)
     }
     
     /**
@@ -1235,9 +1273,16 @@ class MassaRepository @Inject constructor(
             }
             
             response.result?.firstOrNull()?.let { op ->
-                Log.d("MassaRepository", "Operation details: isFinal=${op.isFinal}, inPool=${op.inPool}")
+                Log.d(
+                    "MassaRepository",
+                    "Operation details: isFinal=${op.isFinal}, inPool=${op.inPool}, op_exec_status=${op.opExecStatus}, op_exec_error=${op.opExecError}"
+                )
                 
                 val status = when {
+                    op.isFinal && op.opExecStatus == false -> {
+                        Log.w("MassaRepository", "Operation $operationId is FAILED (finalized, execution failed): ${op.opExecError}")
+                        com.massapay.android.core.model.TransactionStatus.FAILED
+                    }
                     op.isFinal -> {
                         Log.d("MassaRepository", "Operation $operationId is CONFIRMED (isFinal=true)")
                         com.massapay.android.core.model.TransactionStatus.CONFIRMED

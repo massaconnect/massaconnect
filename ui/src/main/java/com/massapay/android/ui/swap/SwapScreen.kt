@@ -5,6 +5,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -31,6 +33,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateIntAsState
 import androidx.hilt.navigation.compose.hiltViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -40,14 +45,27 @@ fun SwapScreen(
     viewModel: SwapViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val isDarkTheme = isSystemInDarkTheme()
     
-    // Colors
+    // Colors - using MaterialTheme for consistency
     val backgroundColor = MaterialTheme.colorScheme.background
     val cardBackground = MaterialTheme.colorScheme.surfaceVariant
     val accentColor = Color(0xFFFF9800) // Orange for swap
     val textPrimary = MaterialTheme.colorScheme.onBackground
     val textSecondary = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+    
+    // Theme detection based on background luminance (same as Staking)
+    val isDarkTheme = remember(backgroundColor) {
+        val bgColor = backgroundColor
+        (bgColor.red * 0.299f + bgColor.green * 0.587f + bgColor.blue * 0.114f) < 0.5f
+    }
+    
+    // Icon container colors (black with white icon in light mode)
+    val iconContainerColor = if (isDarkTheme) Color.White.copy(alpha = 0.1f) else Color.Black
+    val iconTintColor = Color.White
+    
+    // Button colors
+    val buttonContainerColor = if (isDarkTheme) Color.White else Color.Black
+    val buttonContentColor = if (isDarkTheme) Color.Black else Color.White
     
     // Token selection dialogs
     var showFromTokenDialog by remember { mutableStateOf(false) }
@@ -79,13 +97,23 @@ fun SwapScreen(
                     }
                 },
                 actions = {
-                    // Settings/Slippage button
-                    IconButton(onClick = { viewModel.toggleSettings() }) {
-                        Icon(
-                            Icons.Outlined.Settings,
-                            contentDescription = "Settings",
-                            tint = textSecondary
-                        )
+                    // Settings/Slippage button with styled container
+                    Surface(
+                        onClick = { viewModel.toggleSettings() },
+                        shape = RoundedCornerShape(12.dp),
+                        color = iconContainerColor,
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(
+                                Icons.Outlined.Tune,
+                                contentDescription = "Settings",
+                                tint = iconTintColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -112,18 +140,51 @@ fun SwapScreen(
             ) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = cardBackground)
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBackground),
+                    elevation = CardDefaults.cardElevation(
+                        defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+                    )
                 ) {
                     Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Text(
-                            "Slippage Tolerance",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Surface(
+                                modifier = Modifier.size(44.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                color = iconContainerColor
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Tune,
+                                        contentDescription = null,
+                                        tint = iconTintColor,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                            Column {
+                                Text(
+                                    "Slippage Tolerance",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = textPrimary
+                                )
+                                Text(
+                                    "Max price change allowed",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = textSecondary
+                                )
+                            }
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -132,22 +193,23 @@ fun SwapScreen(
                                 val isSelected = uiState.slippage == slippage.dropLast(1).toFloat()
                                 Surface(
                                     onClick = { viewModel.setSlippage(slippage.dropLast(1).toFloat()) },
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (isSelected) accentColor else cardBackground,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .border(
-                                            width = 1.dp,
-                                            color = if (isSelected) accentColor else textSecondary.copy(alpha = 0.3f),
-                                            shape = RoundedCornerShape(8.dp)
-                                        )
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isSelected) {
+                                        buttonContainerColor
+                                    } else {
+                                        if (isDarkTheme) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.08f)
+                                    },
+                                    modifier = Modifier.weight(1f)
                                 ) {
                                     Text(
                                         slippage,
-                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        modifier = Modifier.padding(vertical = 12.dp),
                                         textAlign = TextAlign.Center,
-                                        color = if (isSelected) Color.White else textPrimary,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        color = if (isSelected) {
+                                            buttonContentColor
+                                        } else textPrimary,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        style = MaterialTheme.typography.bodyMedium
                                     )
                                 }
                             }
@@ -171,39 +233,48 @@ fun SwapScreen(
                 textPrimary = textPrimary,
                 textSecondary = textSecondary,
                 accentColor = accentColor,
-                isEditable = true
+                isEditable = true,
+                isDarkTheme = isDarkTheme
             )
 
             // Swap Button (between cards)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .offset(y = (-8).dp),
+                    .offset(y = (-4).dp),
                 contentAlignment = Alignment.Center
             ) {
+                // Outer ring
                 Surface(
-                    onClick = {
-                        isSwapping = true
-                        viewModel.swapTokens()
-                    },
                     shape = CircleShape,
-                    color = cardBackground,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .border(4.dp, backgroundColor, CircleShape)
+                    color = backgroundColor,
+                    modifier = Modifier.size(60.dp)
                 ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        Icon(
-                            Icons.Default.SwapVert,
-                            contentDescription = "Swap tokens",
-                            tint = accentColor,
-                            modifier = Modifier
-                                .size(24.dp)
-                                .rotate(rotationAngle)
-                        )
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        // Inner button - uses consistent button colors
+                        Surface(
+                            onClick = {
+                                isSwapping = true
+                                viewModel.swapTokens()
+                            },
+                            shape = CircleShape,
+                            color = buttonContainerColor,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Icon(
+                                    Icons.Default.SwapVert,
+                                    contentDescription = "Swap tokens",
+                                    tint = buttonContentColor,
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .rotate(rotationAngle)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -222,7 +293,8 @@ fun SwapScreen(
                 textSecondary = textSecondary,
                 accentColor = accentColor,
                 isEditable = false,
-                isCalculating = uiState.isCalculatingQuote
+                isCalculating = uiState.isCalculatingQuote,
+                isDarkTheme = isDarkTheme
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -231,15 +303,28 @@ fun SwapScreen(
             if (uiState.fromAmount.isNotEmpty() && uiState.toAmount.isNotEmpty()) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = cardBackground.copy(alpha = 0.5f)
+                        containerColor = cardBackground
+                    ),
+                    elevation = CardDefaults.cardElevation(
+                        defaultElevation = if (isDarkTheme) 0.dp else 2.dp
                     )
                 ) {
                     Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        // Header
+                        Text(
+                            "Transaction Details",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = textPrimary
+                        )
+                        
+                        Divider(color = textSecondary.copy(alpha = 0.1f))
+                        
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
@@ -257,12 +342,18 @@ fun SwapScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text("Price Impact", color = textSecondary, style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "${uiState.priceImpact}%",
-                                color = if (uiState.priceImpact < 1f) Color(0xFF4CAF50) else Color(0xFFFF5722),
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
-                            )
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (uiState.priceImpact < 1f) Color(0xFF4CAF50).copy(alpha = 0.1f) else Color(0xFFFF5722).copy(alpha = 0.1f)
+                            ) {
+                                Text(
+                                    "${uiState.priceImpact}%",
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    color = if (uiState.priceImpact < 1f) Color(0xFF4CAF50) else Color(0xFFFF5722),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -313,28 +404,30 @@ fun SwapScreen(
             // Swap Button
             Button(
                 onClick = { viewModel.requestSwapConfirmation() },
-                enabled = uiState.canSwap && !uiState.isLoading && !uiState.isCalculatingQuote,
+                enabled = uiState.canSwap && !uiState.isLoading && !uiState.isCalculatingQuote && !uiState.isConfirmingTx,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = accentColor,
-                    disabledContainerColor = accentColor.copy(alpha = 0.3f)
+                    containerColor = buttonContainerColor,
+                    contentColor = buttonContentColor,
+                    disabledContainerColor = buttonContainerColor.copy(alpha = 0.3f),
+                    disabledContentColor = buttonContentColor.copy(alpha = 0.5f)
                 )
             ) {
-                if (uiState.isLoading) {
+                if (uiState.isLoading || uiState.isConfirmingTx) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
-                            color = Color.White,
+                            color = buttonContentColor,
                             strokeWidth = 2.dp
                         )
                         Text(
-                            uiState.swapStatus.ifEmpty { "Processing..." },
+                            uiState.swapStatus.ifEmpty { if (uiState.isConfirmingTx) "Confirming..." else "Processing..." },
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )
@@ -346,14 +439,14 @@ fun SwapScreen(
                     ) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
-                            color = Color.White.copy(alpha = 0.7f),
+                            color = buttonContentColor.copy(alpha = 0.7f),
                             strokeWidth = 2.dp
                         )
                         Text(
                             "Getting quote...",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
-                            color = Color.White.copy(alpha = 0.7f)
+                            color = buttonContentColor.copy(alpha = 0.7f)
                         )
                     }
                 } else {
@@ -488,16 +581,67 @@ private fun SwapTokenCard(
     textSecondary: Color,
     accentColor: Color,
     isEditable: Boolean,
-    isCalculating: Boolean = false
+    isCalculating: Boolean = false,
+    isDarkTheme: Boolean = false
 ) {
+    // Press animation
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "cardScale"
+    )
+    
+    // Entrance animation
+    var visible by remember { mutableStateOf(false) }
+    val offsetY by animateIntAsState(
+        targetValue = if (visible) 0 else 50,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioLowBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "offsetY"
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(400),
+        label = "alpha"
+    )
+    
+    LaunchedEffect(Unit) {
+        visible = true
+    }
+    
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = cardBackground)
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                translationY = offsetY.toFloat()
+                this.alpha = alpha
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        tryAwaitRelease()
+                        isPressed = false
+                    }
+                )
+            },
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBackground),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+        )
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Header with label and balance
             Row(
@@ -505,11 +649,19 @@ private fun SwapTokenCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    label,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = textSecondary
-                )
+                // Label badge
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (label == "From") accentColor.copy(alpha = 0.1f) else Color(0xFF4CAF50).copy(alpha = 0.1f)
+                ) {
+                    Text(
+                        label,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (label == "From") accentColor else Color(0xFF4CAF50)
+                    )
+                }
                 if (isEditable && balance.isNotEmpty()) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -520,13 +672,15 @@ private fun SwapTokenCard(
                             style = MaterialTheme.typography.labelSmall,
                             color = textSecondary
                         )
-                        TextButton(
+                        Surface(
                             onClick = onMaxClick,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isDarkTheme) Color.White else Color.Black
                         ) {
                             Text(
                                 "MAX",
-                                color = accentColor,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                color = if (isDarkTheme) Color.Black else Color.White,
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.labelSmall
                             )
@@ -534,7 +688,6 @@ private fun SwapTokenCard(
                     }
                 }
             }
-
             // Token selector and amount input
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -771,11 +924,54 @@ private fun SwapSuccessDialog(
 ) {
     val context = LocalContext.current
     
+    // Animations
+    var visible by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.5f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "dialogScale"
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(300),
+        label = "dialogAlpha"
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow,
+            visibilityThreshold = 0.01f
+        ),
+        label = "iconScale"
+    )
+    val iconRotation by animateFloatAsState(
+        targetValue = if (visible) 0f else -180f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "iconRotation"
+    )
+    
+    // Trigger animation on composition
+    LaunchedEffect(Unit) {
+        visible = true
+    }
+    
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(16.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    this.alpha = alpha
+                },
             shape = RoundedCornerShape(24.dp)
         ) {
             Column(
@@ -783,19 +979,64 @@ private fun SwapSuccessDialog(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Success Icon
-                Surface(
-                    shape = CircleShape,
-                    color = Color(0xFF4CAF50).copy(alpha = 0.15f),
-                    modifier = Modifier.size(72.dp)
+                // Animated Success Icon with pulse effect
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(80.dp)
                 ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Icon(
-                            Icons.Default.Check,
-                            contentDescription = null,
-                            tint = Color(0xFF4CAF50),
-                            modifier = Modifier.size(40.dp)
-                        )
+                    // Outer glow pulse
+                    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+                    val pulseScale by infiniteTransition.animateFloat(
+                        initialValue = 1f,
+                        targetValue = 1.3f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(1000, easing = FastOutSlowInEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "pulseScale"
+                    )
+                    val pulseAlpha by infiniteTransition.animateFloat(
+                        initialValue = 0.4f,
+                        targetValue = 0f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(1000, easing = FastOutSlowInEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "pulseAlpha"
+                    )
+                    
+                    // Pulse ring
+                    Surface(
+                        shape = CircleShape,
+                        color = Color(0xFF4CAF50).copy(alpha = pulseAlpha),
+                        modifier = Modifier
+                            .size(72.dp)
+                            .graphicsLayer {
+                                scaleX = pulseScale
+                                scaleY = pulseScale
+                            }
+                    ) {}
+                    
+                    // Main success circle
+                    Surface(
+                        shape = CircleShape,
+                        color = Color(0xFF4CAF50).copy(alpha = 0.15f),
+                        modifier = Modifier
+                            .size(72.dp)
+                            .graphicsLayer {
+                                scaleX = iconScale
+                                scaleY = iconScale
+                                rotationZ = iconRotation
+                            }
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = null,
+                                tint = Color(0xFF4CAF50),
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
                     }
                 }
 
@@ -805,11 +1046,45 @@ private fun SwapSuccessDialog(
                     fontWeight = FontWeight.Bold
                 )
 
-                Text(
-                    "$fromAmount ${fromToken.symbol} → $toAmount ${toToken.symbol}",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
+                // Animated swap amount with arrows
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "$fromAmount ${fromToken.symbol}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    
+                    // Animated arrow
+                    val arrowTransition = rememberInfiniteTransition(label = "arrowPulse")
+                    val arrowOffset by arrowTransition.animateFloat(
+                        initialValue = -2f,
+                        targetValue = 2f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(500, easing = FastOutSlowInEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "arrowOffset"
+                    )
+                    
+                    Icon(
+                        Icons.Default.ArrowForward,
+                        contentDescription = null,
+                        tint = accentColor,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .graphicsLayer { translationX = arrowOffset }
+                    )
+                    
+                    Text(
+                        "$toAmount ${toToken.symbol}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = accentColor
+                    )
+                }
 
                 if (txHash != null) {
                     TextButton(
@@ -820,6 +1095,7 @@ private fun SwapSuccessDialog(
                         }
                     ) {
                         Text("View on Explorer", color = accentColor)
+                        Spacer(modifier = Modifier.width(4.dp))
                         Icon(
                             Icons.Default.OpenInNew,
                             contentDescription = null,

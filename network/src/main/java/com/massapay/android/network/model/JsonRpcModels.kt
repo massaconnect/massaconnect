@@ -96,5 +96,10 @@ data class OperationResponse(
     @SerializedName("timestamp")
     val timestamp: Long? = null,
     @SerializedName("slot")
-    val slot: SlotInfo? = null
+    val slot: SlotInfo? = null,
+    // Execution status (smart contract success/failure). Optional because nodes/versions may omit it.
+    @SerializedName("op_exec_status")
+    val opExecStatus: Boolean? = null,
+    @SerializedName("op_exec_error")
+    val opExecError: String? = null
 )

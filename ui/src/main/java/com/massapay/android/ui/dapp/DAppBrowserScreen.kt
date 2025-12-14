@@ -150,14 +150,18 @@ fun DAppBrowserScreen(
     var pendingDAppUrl by remember { mutableStateOf<String?>(null) }
     var acknowledgedDApps by remember { mutableStateOf(setOf<String>()) }
     
-    // Theme colors matching Dashboard
-    val backgroundColor = if (isDarkTheme) Color(0xFF0D0D15) else Color(0xFFFAFAFA)
-    val surfaceColor = if (isDarkTheme) Color(0xFF1A1A2E) else Color.White
-    val cardBackground = if (isDarkTheme) Color(0xFF16162A) else Color.White
-    val textPrimary = if (isDarkTheme) Color.White else Color(0xFF1A1A2E)
-    val textSecondary = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color(0xFF64748B)
-    val accentColor = Color(0xFF6366F1)
-    val accentGreen = Color(0xFF22C55E)
+    // Theme colors matching Dashboard - Pure black/white themes
+    val backgroundColor = if (isDarkTheme) Color(0xFF000000) else Color(0xFFFFFFFF)
+    val surfaceColor = if (isDarkTheme) Color(0xFF0A0A0A) else Color(0xFFFAFAFA)
+    val cardBackground = if (isDarkTheme) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val textPrimary = if (isDarkTheme) Color.White else Color(0xFF000000)
+    val textSecondary = if (isDarkTheme) Color(0xFFB0B0B0) else Color(0xFF666666)
+    val accentColor = Color(0xFF7B3FE4)  // Web3 purple
+    val accentGreen = Color(0xFF00C853)
+    
+    // Icon button colors for light/dark mode
+    val iconButtonBg = if (isDarkTheme) Color(0xFF1A1A1A) else Color(0xFFEEEEEE)
+    val iconButtonTint = if (isDarkTheme) Color.White else Color(0xFF333333)
     
     // Load pending URL when webView is ready
     LaunchedEffect(webView, pendingUrl) {
@@ -602,13 +606,17 @@ private fun DAppHomeScreen(
     onDAppClick: (DAppBookmark) -> Unit,
     onSubmitDApp: () -> Unit
 ) {
-    val backgroundColor = if (isDarkTheme) Color(0xFF0D0D15) else Color(0xFFFAFAFA)
-    val cardBackground = if (isDarkTheme) Color(0xFF16162A) else Color.White
-    val textPrimary = if (isDarkTheme) Color.White else Color(0xFF1A1A2E)
-    val textSecondary = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color(0xFF64748B)
-    val accentColor = Color(0xFF6366F1)
-    val accentCyan = Color(0xFF06B6D4)
-    val accentOrange = Color(0xFFFF9800)
+    val backgroundColor = if (isDarkTheme) Color(0xFF000000) else Color(0xFFFFFFFF)
+    val cardBackground = if (isDarkTheme) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val textPrimary = if (isDarkTheme) Color.White else Color(0xFF000000)
+    val textSecondary = if (isDarkTheme) Color(0xFFB0B0B0) else Color(0xFF666666)
+    val accentColor = Color(0xFF7B3FE4)  // Web3 purple
+    val accentCyan = Color(0xFF00D4FF)
+    val accentOrange = Color(0xFFFF9500)
+    
+    // Icon button colors
+    val iconButtonBg = if (isDarkTheme) Color(0xFF1A1A1A) else Color(0xFFEEEEEE)
+    val iconButtonTint = if (isDarkTheme) Color.White else Color(0xFF333333)
     
     var showAllDApps by remember { mutableStateOf(true) }
     
@@ -625,7 +633,9 @@ private fun DAppHomeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = cardBackground),
                 shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(
+                    defaultElevation = if (isDarkTheme) 0.dp else 3.dp
+                )
             ) {
                 OutlinedTextField(
                     value = urlInput,
@@ -663,47 +673,55 @@ private fun DAppHomeScreen(
         
         // Featured Banner - Massa Ecosystem
         item {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                accentColor.copy(alpha = 0.15f),
-                                accentCyan.copy(alpha = 0.1f)
-                            )
-                        ),
-                        shape = RoundedCornerShape(20.dp)
-                    )
-                    .padding(20.dp)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = cardBackground),
+                shape = RoundedCornerShape(20.dp),
+                elevation = CardDefaults.cardElevation(
+                    defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+                )
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Massa Ecosystem",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = textPrimary
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Explore DApps from massa.net/ecosystem",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = textSecondary
-                        )
-                    }
-                    Surface(
-                        modifier = Modifier.size(60.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        color = accentColor.copy(alpha = 0.2f)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Apps,
-                                contentDescription = null,
-                                tint = accentColor,
-                                modifier = Modifier.size(32.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    accentColor.copy(alpha = if (isDarkTheme) 0.2f else 0.1f),
+                                    accentCyan.copy(alpha = if (isDarkTheme) 0.15f else 0.05f)
+                                )
                             )
+                        )
+                        .padding(20.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Massa Ecosystem",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = textPrimary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Explore DApps from massa.net/ecosystem",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = textSecondary
+                            )
+                        }
+                        Surface(
+                            modifier = Modifier.size(60.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isDarkTheme) iconButtonBg else Color.Black
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Apps,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -720,8 +738,8 @@ private fun DAppHomeScreen(
                     val isSelected = category == selectedCategory
                     val categoryColor = when (category) {
                         DAppCategory.ALL -> accentColor
-                        DAppCategory.OFFICIAL -> Color(0xFFE63946)
-                        DAppCategory.DEFI -> Color(0xFF22C55E)
+                        DAppCategory.OFFICIAL -> Color(0xFFFF3B30)
+                        DAppCategory.DEFI -> Color(0xFF00C853)
                         DAppCategory.NFT -> Color(0xFF8B5CF6)
                     }
                     
@@ -729,8 +747,8 @@ private fun DAppHomeScreen(
                         onClick = { onCategorySelected(category) },
                         shape = RoundedCornerShape(12.dp),
                         color = if (isSelected) categoryColor else cardBackground,
-                        tonalElevation = if (isSelected) 0.dp else 2.dp,
-                        shadowElevation = if (isSelected) 0.dp else 1.dp
+                        tonalElevation = 0.dp,
+                        shadowElevation = if (isSelected) 0.dp else if (isDarkTheme) 0.dp else 2.dp
                     ) {
                         Text(
                             text = category.displayName,
@@ -797,7 +815,9 @@ private fun DAppHomeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = cardBackground),
                 shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(
+                    defaultElevation = if (isDarkTheme) 0.dp else 3.dp
+                )
             ) {
                 Box(
                     modifier = Modifier
@@ -805,8 +825,8 @@ private fun DAppHomeScreen(
                         .background(
                             Brush.linearGradient(
                                 colors = listOf(
-                                    accentOrange.copy(alpha = 0.1f),
-                                    Color(0xFFEF4444).copy(alpha = 0.05f)
+                                    accentOrange.copy(alpha = if (isDarkTheme) 0.15f else 0.1f),
+                                    Color(0xFFFF3B30).copy(alpha = if (isDarkTheme) 0.1f else 0.05f)
                                 )
                             )
                         )
@@ -819,7 +839,7 @@ private fun DAppHomeScreen(
                         Surface(
                             modifier = Modifier.size(48.dp),
                             shape = RoundedCornerShape(12.dp),
-                            color = accentOrange.copy(alpha = 0.15f)
+                            color = iconButtonBg
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
@@ -885,16 +905,16 @@ private fun DAppGridCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val cardBackground = if (isDarkTheme) Color(0xFF16162A) else Color.White
-    val textPrimary = if (isDarkTheme) Color.White else Color(0xFF1A1A2E)
-    val textSecondary = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color(0xFF64748B)
+    val cardBackground = if (isDarkTheme) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val textPrimary = if (isDarkTheme) Color.White else Color(0xFF000000)
+    val textSecondary = if (isDarkTheme) Color(0xFFB0B0B0) else Color(0xFF666666)
     
     // Color based on category
     val category = try { DAppCategory.valueOf(bookmark.category) } catch (e: Exception) { DAppCategory.DEFI }
     val cardAccent = when (category) {
-        DAppCategory.ALL -> Color(0xFF6366F1)
-        DAppCategory.OFFICIAL -> Color(0xFFE63946)
-        DAppCategory.DEFI -> Color(0xFF22C55E)
+        DAppCategory.ALL -> Color(0xFF7B3FE4)
+        DAppCategory.OFFICIAL -> Color(0xFFFF3B30)
+        DAppCategory.DEFI -> Color(0xFF00C853)
         DAppCategory.NFT -> Color(0xFF8B5CF6)
     }
     
@@ -903,7 +923,9 @@ private fun DAppGridCard(
         modifier = modifier.height(110.dp),
         colors = CardDefaults.cardColors(containerColor = cardBackground),
         shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+        )
     ) {
         Box(
             modifier = Modifier
@@ -988,17 +1010,19 @@ private fun RecentDAppCard(
     isDarkTheme: Boolean,
     onClick: () -> Unit
 ) {
-    val cardBackground = if (isDarkTheme) Color(0xFF16162A) else Color.White
-    val textPrimary = if (isDarkTheme) Color.White else Color(0xFF1A1A2E)
-    val textSecondary = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color(0xFF64748B)
-    val accentColor = Color(0xFF6366F1)
+    val cardBackground = if (isDarkTheme) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val textPrimary = if (isDarkTheme) Color.White else Color(0xFF000000)
+    val textSecondary = if (isDarkTheme) Color(0xFFB0B0B0) else Color(0xFF666666)
+    val accentColor = Color(0xFF7B3FE4)
     
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = cardBackground),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isDarkTheme) 0.dp else 3.dp
+        )
     ) {
         Row(
             modifier = Modifier

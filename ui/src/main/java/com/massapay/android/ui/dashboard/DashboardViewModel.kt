@@ -109,6 +109,10 @@ class DashboardViewModel @Inject constructor(
                         try {
                             android.util.Log.d("DashboardVM", "Requesting Massa stats...")
                             priceRepository.getMassaStats()
+                                .catch { e -> 
+                                    android.util.Log.e("DashboardVM", "Flow error: ${e.message}")
+                                    // Don't emit, just log and flow completes
+                                }
                                 .collect { result ->
                                     android.util.Log.d("DashboardVM", "Stats result: $result")
                                     when (result) {

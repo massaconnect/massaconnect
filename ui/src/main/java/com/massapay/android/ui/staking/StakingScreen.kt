@@ -1,6 +1,7 @@
 package com.massapay.android.ui.staking
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -17,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -36,11 +38,16 @@ fun StakingScreen(
     var showSellDialog by remember { mutableStateOf(false) }
     var showInfoDialog by remember { mutableStateOf(false) }
     
-    val backgroundColor = if (isDarkTheme) Color(0xFF0D0D15) else Color.White
-    val cardColor = if (isDarkTheme) Color(0xFF1A1A2E) else Color(0xFFF8F9FA)
-    val textColor = if (isDarkTheme) Color.White else Color.Black
-    val secondaryTextColor = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.6f)
+    // Use MaterialTheme colors for consistent theming
+    val backgroundColor = MaterialTheme.colorScheme.background
+    val cardColor = MaterialTheme.colorScheme.surfaceVariant
+    val textColor = MaterialTheme.colorScheme.onBackground
+    val secondaryTextColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
     val accentColor = Color(0xFF6366F1)
+    
+    // Icon container colors (black container with white icon in light mode)
+    val iconContainerColor = if (isDarkTheme) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else Color.Black
+    val iconTintColor = Color.White
 
     Scaffold(
         topBar = {
@@ -109,64 +116,12 @@ fun StakingScreen(
                         cardColor = cardColor,
                         textColor = textColor,
                         secondaryTextColor = secondaryTextColor,
-                        accentColor = accentColor
+                        accentColor = accentColor,
+                        onBuyClick = { showBuyDialog = true },
+                        onSellClick = { showSellDialog = true },
+                        canBuy = !uiState.isProcessing && viewModel.getMaxRollsToBuy() > 0,
+                        canSell = !uiState.isProcessing && viewModel.getMaxRollsToSell() > 0
                     )
-                    
-                    // Action Buttons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        // Buy Rolls Button
-                        Button(
-                            onClick = { showBuyDialog = true },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(56.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = accentColor
-                            ),
-                            enabled = !uiState.isProcessing && viewModel.getMaxRollsToBuy() > 0
-                        ) {
-                            Icon(
-                                Icons.Default.Add,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Buy Rolls", fontWeight = FontWeight.SemiBold)
-                        }
-                        
-                        // Sell Rolls Button
-                        OutlinedButton(
-                            onClick = { showSellDialog = true },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(56.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = if (isDarkTheme) Color.White else Color.Black
-                            ),
-                            border = ButtonDefaults.outlinedButtonBorder.copy(
-                                brush = Brush.linearGradient(
-                                    colors = listOf(
-                                        if (isDarkTheme) Color.White.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.3f),
-                                        if (isDarkTheme) Color.White.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.3f)
-                                    )
-                                )
-                            ),
-                            enabled = !uiState.isProcessing && viewModel.getMaxRollsToSell() > 0
-                        ) {
-                            Icon(
-                                Icons.Default.Remove,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Sell Rolls", fontWeight = FontWeight.SemiBold)
-                        }
-                    }
                     
                     // Info Cards
                     StakingInfoCard(
@@ -176,7 +131,9 @@ fun StakingScreen(
                         isDarkTheme = isDarkTheme,
                         cardColor = cardColor,
                         textColor = textColor,
-                        secondaryTextColor = secondaryTextColor
+                        secondaryTextColor = secondaryTextColor,
+                        iconContainerColor = iconContainerColor,
+                        iconTintColor = iconTintColor
                     )
                     
                     StakingInfoCard(
@@ -186,7 +143,9 @@ fun StakingScreen(
                         isDarkTheme = isDarkTheme,
                         cardColor = cardColor,
                         textColor = textColor,
-                        secondaryTextColor = secondaryTextColor
+                        secondaryTextColor = secondaryTextColor,
+                        iconContainerColor = iconContainerColor,
+                        iconTintColor = iconTintColor
                     )
                     
                     StakingInfoCard(
@@ -196,7 +155,9 @@ fun StakingScreen(
                         isDarkTheme = isDarkTheme,
                         cardColor = cardColor,
                         textColor = textColor,
-                        secondaryTextColor = secondaryTextColor
+                        secondaryTextColor = secondaryTextColor,
+                        iconContainerColor = iconContainerColor,
+                        iconTintColor = iconTintColor
                     )
                     
                     Spacer(modifier = Modifier.height(16.dp))
@@ -313,12 +274,88 @@ private fun RollsBalanceCard(
     cardColor: Color,
     textColor: Color,
     secondaryTextColor: Color,
-    accentColor: Color
+    accentColor: Color,
+    onBuyClick: () -> Unit,
+    onSellClick: () -> Unit,
+    canBuy: Boolean,
+    canSell: Boolean
 ) {
+    // Animated roll count
+    val targetRolls = stakingInfo?.totalRolls?.toFloat() ?: 0f
+    val animatedRolls by animateFloatAsState(
+        targetValue = targetRolls,
+        animationSpec = tween(
+            durationMillis = 1000,
+            easing = FastOutSlowInEasing
+        ),
+        label = "rollsAnimation"
+    )
+    
+    // Animated MAS value
+    val targetMasValue = stakingInfo?.rollsValueInMas?.toFloat() ?: 0f
+    val animatedMasValue by animateFloatAsState(
+        targetValue = targetMasValue,
+        animationSpec = tween(
+            durationMillis = 1000,
+            easing = FastOutSlowInEasing
+        ),
+        label = "masValueAnimation"
+    )
+    
+    // Icon rotation animation
+    val infiniteTransition = rememberInfiniteTransition(label = "iconPulse")
+    val iconScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "iconScale"
+    )
+    val iconGlow by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "iconGlow"
+    )
+    
+    // Entrance animation
+    var visible by remember { mutableStateOf(false) }
+    val cardScale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.9f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "cardScale"
+    )
+    val cardAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(500),
+        label = "cardAlpha"
+    )
+    
+    LaunchedEffect(Unit) {
+        visible = true
+    }
+    
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = cardColor)
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = cardScale
+                scaleY = cardScale
+                alpha = cardAlpha
+            },
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+        )
     ) {
         Column(
             modifier = Modifier
@@ -326,97 +363,272 @@ private fun RollsBalanceCard(
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Roll icon
-            Box(
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(accentColor, Color(0xFF8B5CF6))
-                        )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Token,
-                    contentDescription = null,
-                    modifier = Modifier.size(40.dp),
-                    tint = Color.White
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Rolls count
-            Text(
-                text = "${stakingInfo?.totalRolls ?: 0}",
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold,
-                color = textColor
-            )
-            
-            Text(
-                text = "Rolls",
-                style = MaterialTheme.typography.titleMedium,
-                color = secondaryTextColor
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Value in MAS
-            Text(
-                text = "≈ ${String.format("%.0f", stakingInfo?.rollsValueInMas ?: 0.0)} MAS",
-                style = MaterialTheme.typography.bodyLarge,
-                color = accentColor,
-                fontWeight = FontWeight.Medium
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Details row
+            // Header row with title
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                RollsDetailItem(
-                    label = "Final",
-                    value = "${stakingInfo?.finalRolls ?: 0}",
-                    textColor = textColor,
-                    secondaryTextColor = secondaryTextColor
+                Text(
+                    text = "Your Staking",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = textColor
                 )
                 
-                RollsDetailItem(
-                    label = "Pending",
-                    value = "${stakingInfo?.candidateRolls ?: 0}",
-                    textColor = textColor,
-                    secondaryTextColor = secondaryTextColor
-                )
+                // Status badge
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (targetRolls > 0) Color(0xFF4CAF50).copy(alpha = 0.15f) else secondaryTextColor.copy(alpha = 0.1f)
+                ) {
+                    Text(
+                        text = if (targetRolls > 0) "Active" else "Inactive",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = if (targetRolls > 0) Color(0xFF4CAF50) else secondaryTextColor
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Main balance section
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Left side - Icon and Rolls
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Animated Roll icon with glow
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(72.dp)
+                    ) {
+                        // Glow effect
+                        Box(
+                            modifier = Modifier
+                                .size(68.dp)
+                                .graphicsLayer {
+                                    scaleX = iconScale * 1.1f
+                                    scaleY = iconScale * 1.1f
+                                }
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.radialGradient(
+                                        colors = listOf(
+                                            accentColor.copy(alpha = iconGlow),
+                                            Color.Transparent
+                                        )
+                                    )
+                                )
+                        )
+                        
+                        // Main icon
+                        Box(
+                            modifier = Modifier
+                                .size(60.dp)
+                                .graphicsLayer {
+                                    scaleX = iconScale
+                                    scaleY = iconScale
+                                }
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.linearGradient(
+                                        colors = listOf(accentColor, Color(0xFF8B5CF6))
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Token,
+                                contentDescription = null,
+                                modifier = Modifier.size(32.dp),
+                                tint = Color.White
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.width(16.dp))
+                    
+                    Column {
+                        // Animated Rolls count
+                        Text(
+                            text = "${animatedRolls.toInt()}",
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor
+                        )
+                        Text(
+                            text = "Rolls",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = secondaryTextColor
+                        )
+                    }
+                }
                 
-                RollsDetailItem(
-                    label = "Available MAS",
-                    value = String.format("%.2f", stakingInfo?.balance?.toDoubleOrNull() ?: 0.0),
-                    textColor = textColor,
-                    secondaryTextColor = secondaryTextColor
-                )
+                // Right side - MAS Value
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "${String.format("%.0f", animatedMasValue)}",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = accentColor
+                    )
+                    Text(
+                        text = "MAS",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = secondaryTextColor
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Details row in a subtle container
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.Black.copy(alpha = 0.03f)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    StakingStatItem(
+                        label = "Final",
+                        value = "${stakingInfo?.finalRolls ?: 0}",
+                        textColor = textColor,
+                        secondaryTextColor = secondaryTextColor
+                    )
+                    
+                    // Divider
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(40.dp)
+                            .background(secondaryTextColor.copy(alpha = 0.2f))
+                    )
+                    
+                    StakingStatItem(
+                        label = "Pending",
+                        value = "${stakingInfo?.candidateRolls ?: 0}",
+                        textColor = textColor,
+                        secondaryTextColor = secondaryTextColor
+                    )
+                    
+                    // Divider
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(40.dp)
+                            .background(secondaryTextColor.copy(alpha = 0.2f))
+                    )
+                    
+                    StakingStatItem(
+                        label = "Available",
+                        value = String.format("%.1f", stakingInfo?.balance?.toDoubleOrNull() ?: 0.0),
+                        textColor = textColor,
+                        secondaryTextColor = secondaryTextColor
+                    )
+                }
             }
             
             // Deferred credits if any
             val deferredCredits = stakingInfo?.deferredCredits?.toDoubleOrNull() ?: 0.0
             if (deferredCredits > 0) {
                 Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "Pending: ${String.format("%.2f", deferredCredits)} MAS",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFFF9800)
-                )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFFF9800).copy(alpha = 0.1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Schedule,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = Color(0xFFFF9800)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Pending: ${String.format("%.2f", deferredCredits)} MAS",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFFFF9800)
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(20.dp))
+            
+            // Action Buttons - Modern style
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Buy Rolls Button
+                Button(
+                    onClick = onBuyClick,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isDarkTheme) Color.White else Color.Black,
+                        contentColor = if (isDarkTheme) Color.Black else Color.White,
+                        disabledContainerColor = if (isDarkTheme) Color.White.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.3f),
+                        disabledContentColor = if (isDarkTheme) Color.Black.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.5f)
+                    ),
+                    enabled = canBuy
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Buy Rolls", fontWeight = FontWeight.SemiBold)
+                }
+                
+                // Sell Rolls Button
+                OutlinedButton(
+                    onClick = onSellClick,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = textColor,
+                        disabledContentColor = textColor.copy(alpha = 0.4f)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.5.dp,
+                        if (canSell) textColor.copy(alpha = 0.3f) else textColor.copy(alpha = 0.1f)
+                    ),
+                    enabled = canSell
+                ) {
+                    Icon(
+                        Icons.Default.Remove,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Sell Rolls", fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun RollsDetailItem(
+private fun StakingStatItem(
     label: String,
     value: String,
     textColor: Color,
@@ -445,26 +657,40 @@ private fun StakingInfoCard(
     isDarkTheme: Boolean,
     cardColor: Color,
     textColor: Color,
-    secondaryTextColor: Color
+    secondaryTextColor: Color,
+    iconContainerColor: Color,
+    iconTintColor: Color
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = cardColor)
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+        )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(20.dp),
             verticalAlignment = Alignment.Top
         ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = Color(0xFF6366F1)
-            )
-            Spacer(modifier = Modifier.width(12.dp))
+            // Icon with styled container
+            Surface(
+                modifier = Modifier.size(44.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = iconContainerColor
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = iconTintColor
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(
                     text = title,
@@ -495,12 +721,13 @@ private fun RollsDialog(
 ) {
     var rollCount by remember { mutableStateOf(1) }
     
-    val dialogColor = if (isDarkTheme) Color(0xFF1A1A2E) else Color.White
+    val dialogColor = if (isDarkTheme) Color(0xFF121212) else Color.White
     val textColor = if (isDarkTheme) Color.White else Color.Black
     
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = dialogColor,
+        shape = RoundedCornerShape(24.dp),
         title = {
             Text(title, fontWeight = FontWeight.Bold, color = textColor)
         },
@@ -600,12 +827,13 @@ private fun StakingHelpDialog(
     isDarkTheme: Boolean,
     onDismiss: () -> Unit
 ) {
-    val dialogColor = if (isDarkTheme) Color(0xFF1A1A2E) else Color.White
+    val dialogColor = if (isDarkTheme) Color(0xFF121212) else Color.White
     val textColor = if (isDarkTheme) Color.White else Color.Black
     
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = dialogColor,
+        shape = RoundedCornerShape(24.dp),
         title = {
             Text("About Staking", fontWeight = FontWeight.Bold, color = textColor)
         },

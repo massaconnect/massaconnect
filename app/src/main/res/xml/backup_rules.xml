@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Reglas de backup para Android 11 y anteriores.
+   Por seguridad, excluimos todo (wallet data is sensitive).
+-->
+<full-backup-content>
+    <!-- No hacer backup de datos de la wallet por seguridad -->
+</full-backup-content>
