@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-Android-green.svg)](https://www.android.com/)
-[![Version](https://img.shields.io/badge/Version-1.1.0-blue.svg)](https://github.com/massawallet/massapay/releases)
+[![Version](https://img.shields.io/badge/Version-1.2.0-blue.svg)](https://github.com/massawallet/massapay/releases)
 
 [Download APK](https://github.com/massawallet/massapay/releases/latest) | [Privacy Policy](PRIVACY_POLICY_EN.md) | [Report Bug](https://github.com/massawallet/massapay/issues)
 
@@ -61,26 +61,15 @@ MassaPay is a **secure, self-custodial cryptocurrency wallet** for the Massa blo
   <img src="screenshots/1 (2).jpeg" width="180" alt="Dashboard"/>
   <img src="screenshots/1 (3).jpeg" width="180" alt="Portfolio"/>
   <img src="screenshots/1 (4).jpeg" width="180" alt="Send"/>
+  <img src="screenshots/1 (5).jpeg" width="180" alt="Receive"/>
 </p>
 
 <p align="center">
-  <img src="screenshots/1 (5).jpeg" width="180" alt="Receive"/>
   <img src="screenshots/1 (6).jpeg" width="180" alt="Swap"/>
   <img src="screenshots/1 (7).jpeg" width="180" alt="Staking"/>
-  <img src="screenshots/1 (8).jpeg" width="180" alt="DApp Browser"/>
-</p>
-
-<p align="center">
-  <img src="screenshots/1 (9).jpeg" width="180" alt="NFT Gallery"/>
-  <img src="screenshots/1 (10).jpeg" width="180" alt="Transaction History"/>
-  <img src="screenshots/1 (11).jpeg" width="180" alt="Settings"/>
-  <img src="screenshots/1 (12).jpeg" width="180" alt="Price Charts"/>
-</p>
-
-<p align="center">
-  <img src="screenshots/1 (13).jpeg" width="180" alt="Dark Mode"/>
-  <img src="screenshots/1 (14).jpeg" width="180" alt="Security"/>
-  <img src="screenshots/1 (15).jpeg" width="180" alt="About"/>
+  <img src="screenshots/1 (8).jpeg" width="180" alt="Massa Statistics"/>
+  <img src="screenshots/1 (9).jpeg" width="180" alt="Settings"/>
+  <img src="screenshots/1 (10).jpeg" width="180" alt="NFT Gallery"/>
 </p>
 
 ---
