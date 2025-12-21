@@ -14,6 +14,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -68,6 +70,10 @@ fun NFTGalleryScreen(
     val backgroundColor = if (isDarkTheme) Color(0xFF0D0D15) else Color.White
     val contentColor = if (isDarkTheme) Color.White else Color.Black
     
+    // Consistent icon container color like Wallet Manager
+    val iconContainerColor = if (isDarkTheme) Color.White.copy(alpha = 0.1f) else Color.Black
+    val iconTintColor = Color.White
+    
     // State for import dialog
     var showImportDialog by remember { mutableStateOf(false) }
     var contractAddressInput by remember { mutableStateOf("") }
@@ -100,21 +106,46 @@ fun NFTGalleryScreen(
                     }
                 },
                 actions = {
-                    // Import collection button
-                    IconButton(onClick = { showImportDialog = true }) {
-                        Icon(
-                            Icons.Default.Add, 
-                            contentDescription = "Import Collection",
-                            tint = contentColor
-                        )
+                    // Import collection button with black container
+                    Surface(
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .size(40.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = iconContainerColor
+                    ) {
+                        IconButton(
+                            onClick = { showImportDialog = true },
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Icon(
+                                Icons.Default.Add, 
+                                contentDescription = "Import Collection",
+                                tint = iconTintColor
+                            )
+                        }
                     }
-                    // Refresh button
-                    IconButton(onClick = { viewModel.refreshNFTs() }) {
-                        Icon(
-                            Icons.Default.Refresh, 
-                            contentDescription = "Refresh",
-                            tint = contentColor
-                        )
+                    
+                    Spacer(modifier = Modifier.width(4.dp))
+                    
+                    // Refresh button with black container
+                    Surface(
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(40.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = iconContainerColor
+                    ) {
+                        IconButton(
+                            onClick = { viewModel.refreshNFTs() },
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Icon(
+                                Icons.Default.Refresh, 
+                                contentDescription = "Refresh",
+                                tint = iconTintColor
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -220,33 +251,58 @@ fun NFTGalleryScreen(
             )
         }
     
+        val context = LocalContext.current
+        
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .background(backgroundColor)
         ) {
-            when {
-                uiState.isLoading && uiState.nfts.isEmpty() -> {
-                    // Loading skeleton with shimmer effect
-                    LoadingSkeleton(isDarkTheme = isDarkTheme)
-                }
-                uiState.nfts.isEmpty() -> {
-                    EmptyGallery(
-                        modifier = Modifier.align(Alignment.Center),
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                contentPadding = PaddingValues(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // Hero Card - always visible at the top
+                item(span = { GridItemSpan(2) }) {
+                    NFTHeroCard(
+                        nftCount = uiState.nfts.size,
+                        isLoading = uiState.isLoading,
                         isDarkTheme = isDarkTheme
                     )
                 }
-                else -> {
-                    val context = LocalContext.current
-                    
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
-                        contentPadding = PaddingValues(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
+                
+                // Quick Stats Row - always visible
+                item(span = { GridItemSpan(2) }) {
+                    NFTQuickStatsRow(
+                        nfts = uiState.nfts,
+                        isLoading = uiState.isLoading,
+                        isDarkTheme = isDarkTheme
+                    )
+                }
+                
+                // Content based on state
+                when {
+                    uiState.isLoading && uiState.nfts.isEmpty() -> {
+                        // Loading skeleton placeholders
+                        items(6) {
+                            NFTCardSkeleton(isDarkTheme = isDarkTheme)
+                        }
+                    }
+                    uiState.nfts.isEmpty() -> {
+                        // Empty state message
+                        item(span = { GridItemSpan(2) }) {
+                            EmptyGalleryContent(
+                                isDarkTheme = isDarkTheme,
+                                onImportClick = { showImportDialog = true }
+                            )
+                        }
+                    }
+                    else -> {
+                        // NFT Grid
                         items(
                             items = uiState.nfts,
                             key = { "${it.contractAddress}_${it.tokenId}" }
@@ -257,17 +313,19 @@ fun NFTGalleryScreen(
                                 isDarkTheme = isDarkTheme
                             )
                         }
-                        
-                        // Submit Collection Banner - spans full width
-                        item(span = { GridItemSpan(2) }) {
-                            SubmitCollectionBanner(
-                                isDarkTheme = isDarkTheme,
-                                onClick = {
-                                    val intent = Intent(Intent.ACTION_SENDTO).apply {
-                                        data = Uri.parse("mailto:")
-                                        putExtra(Intent.EXTRA_EMAIL, arrayOf("mderramus@gmail.com"))
-                                        putExtra(Intent.EXTRA_SUBJECT, "NFT Collection Submission - MassaPay")
-                                        putExtra(Intent.EXTRA_TEXT, """
+                    }
+                }
+                
+                // Submit Collection Banner - at the bottom, compact and subtle
+                item(span = { GridItemSpan(2) }) {
+                    SubmitCollectionBanner(
+                        isDarkTheme = isDarkTheme,
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                data = Uri.parse("mailto:")
+                                putExtra(Intent.EXTRA_EMAIL, arrayOf("mderramus@gmail.com"))
+                                putExtra(Intent.EXTRA_SUBJECT, "NFT Collection Submission - MassaPay")
+                                putExtra(Intent.EXTRA_TEXT, """
 Hello MassaPay Team,
 
 I would like to submit my NFT collection for verification in MassaPay.
@@ -282,13 +340,11 @@ Website/Social Links:
 Contact Email: 
 
 Thank you!
-                                        """.trimIndent())
-                                    }
-                                    context.startActivity(Intent.createChooser(intent, "Send Email"))
-                                }
-                            )
+                                """.trimIndent())
+                            }
+                            context.startActivity(Intent.createChooser(intent, "Send Email"))
                         }
-                    }
+                    )
                 }
             }
             
@@ -299,7 +355,8 @@ Thank you!
                         .align(Alignment.TopCenter)
                         .padding(top = 8.dp)
                         .size(24.dp),
-                    strokeWidth = 2.dp
+                    strokeWidth = 2.dp,
+                    color = if (isDarkTheme) Color.White else MaterialTheme.colorScheme.primary
                 )
             }
         }
@@ -788,190 +845,169 @@ private fun SubmitCollectionBanner(
     isDarkTheme: Boolean,
     onClick: () -> Unit
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "banner")
+    val cardColor = if (isDarkTheme) Color(0xFF1A1A2E) else Color.White
+    val textColor = if (isDarkTheme) Color.White else Color.Black
+    val iconContainerColor = if (isDarkTheme) Color.White.copy(alpha = 0.1f) else Color.Black
     
-    // Animated gradient shift
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDarkTheme) 0.dp else 4.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Icon container
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(iconContainerColor, RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Collections,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            // Text content
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = "Submit Your Collection",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = textColor
+                )
+                Text(
+                    text = "Get verified on MassaPay",
+                    fontSize = 12.sp,
+                    color = textColor.copy(alpha = 0.6f)
+                )
+            }
+            
+            // Arrow icon
+            Icon(
+                imageVector = Icons.Default.ArrowForward,
+                contentDescription = null,
+                tint = textColor.copy(alpha = 0.5f),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+// ===== NEW COMPONENTS =====
+
+@Composable
+private fun NFTHeroCard(
+    nftCount: Int,
+    isLoading: Boolean,
+    isDarkTheme: Boolean
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "hero")
+    
+    // Animated gradient offset
     val animatedOffset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(4000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "gradientOffset"
+    )
+    
+    // Floating animation
+    val floatAnim by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(3000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "gradientShift"
-    )
-    
-    // Floating particles animation
-    val floatAnimation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
         label = "float"
-    )
-    
-    // Glow pulse animation
-    val glowPulse by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 0.8f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glow"
-    )
-    
-    val gradientColors = listOf(
-        Color(0xFF6366F1), // Indigo
-        Color(0xFF8B5CF6), // Purple
-        Color(0xFFEC4899), // Pink
-        Color(0xFFF59E0B), // Amber
-        Color(0xFF10B981), // Emerald
-        Color(0xFF6366F1)  // Back to Indigo
     )
     
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 16.dp)
-            .clickable { onClick() },
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Transparent
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            .height(160.dp),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(180.dp)
+            modifier = Modifier.fillMaxSize()
         ) {
-            // Animated gradient background
-            Canvas(
-                modifier = Modifier.fillMaxSize()
-            ) {
+            // Gradient background - dark theme unified colors
+            Canvas(modifier = Modifier.fillMaxSize()) {
                 val width = size.width
                 val height = size.height
                 
-                // Main gradient background
                 drawRoundRect(
                     brush = Brush.linearGradient(
-                        colors = gradientColors,
-                        start = Offset(width * animatedOffset, 0f),
-                        end = Offset(width * (1 - animatedOffset), height)
-                    ),
-                    cornerRadius = CornerRadius(20.dp.toPx())
-                )
-                
-                // Overlay darker gradient for depth
-                drawRoundRect(
-                    brush = Brush.verticalGradient(
                         colors = listOf(
-                            Color.Black.copy(alpha = 0.1f),
-                            Color.Transparent,
-                            Color.Black.copy(alpha = 0.3f)
-                        )
-                    ),
-                    cornerRadius = CornerRadius(20.dp.toPx())
-                )
-                
-                // Floating geometric shapes
-                val particleOffset = floatAnimation * 20f
-                
-                // Diamond shape 1
-                val diamond1 = Path().apply {
-                    moveTo(width * 0.15f, height * 0.3f + particleOffset)
-                    lineTo(width * 0.18f, height * 0.4f + particleOffset)
-                    lineTo(width * 0.15f, height * 0.5f + particleOffset)
-                    lineTo(width * 0.12f, height * 0.4f + particleOffset)
-                    close()
-                }
-                drawPath(diamond1, Color.White.copy(alpha = 0.3f))
-                
-                // Circle glow
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = glowPulse * 0.4f),
-                            Color.Transparent
+                            Color(0xFF000000),
+                            Color(0xFF1A1A2E),
+                            Color(0xFF16213E)
                         ),
-                        center = Offset(width * 0.85f, height * 0.25f),
-                        radius = 60f
+                        start = Offset(width * animatedOffset, 0f),
+                        end = Offset(width * (1f - animatedOffset), height)
                     ),
-                    center = Offset(width * 0.85f, height * 0.25f),
-                    radius = 60f
+                    cornerRadius = CornerRadius(24.dp.toPx())
                 )
                 
-                // Small floating squares
-                drawRect(
-                    color = Color.White.copy(alpha = 0.2f),
-                    topLeft = Offset(width * 0.75f, height * 0.6f - particleOffset),
-                    size = Size(15f, 15f)
+                // Decorative circles
+                val particleOffset = floatAnim * 15f
+                
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.05f),
+                    radius = 80f,
+                    center = Offset(width * 0.85f, height * 0.2f + particleOffset)
                 )
                 
-                drawRect(
-                    color = Color.White.copy(alpha = 0.15f),
-                    topLeft = Offset(width * 0.25f, height * 0.7f + particleOffset * 0.5f),
-                    size = Size(10f, 10f)
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.03f),
+                    radius = 120f,
+                    center = Offset(width * 0.1f, height * 0.8f - particleOffset)
                 )
                 
-                // Decorative lines
-                drawLine(
-                    color = Color.White.copy(alpha = 0.3f),
-                    start = Offset(width * 0.05f, height * 0.8f),
-                    end = Offset(width * 0.25f, height * 0.8f),
-                    strokeWidth = 2f,
-                    cap = StrokeCap.Round
-                )
-                
-                drawLine(
-                    color = Color.White.copy(alpha = 0.3f),
-                    start = Offset(width * 0.75f, height * 0.85f),
-                    end = Offset(width * 0.95f, height * 0.85f),
-                    strokeWidth = 2f,
-                    cap = StrokeCap.Round
-                )
-                
-                // Star/sparkle effect
-                val starCenter = Offset(width * 0.9f, height * 0.4f - particleOffset * 0.5f)
-                val starSize = 8f
-                drawLine(
-                    color = Color.White.copy(alpha = glowPulse),
-                    start = Offset(starCenter.x - starSize, starCenter.y),
-                    end = Offset(starCenter.x + starSize, starCenter.y),
-                    strokeWidth = 2f
-                )
-                drawLine(
-                    color = Color.White.copy(alpha = glowPulse),
-                    start = Offset(starCenter.x, starCenter.y - starSize),
-                    end = Offset(starCenter.x, starCenter.y + starSize),
-                    strokeWidth = 2f
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.04f),
+                    radius = 60f,
+                    center = Offset(width * 0.7f, height * 0.7f + particleOffset * 0.5f)
                 )
             }
             
-            // Content overlay
-            Column(
+            // Content
+            Row(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(20.dp),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // NFT icon with glow effect
+                // Icon container
                 Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .background(
+                            Color.White.copy(alpha = 0.1f),
+                            RoundedCornerShape(20.dp)
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Glow behind icon
-                    Box(
-                        modifier = Modifier
-                            .size(52.dp)
-                            .background(
-                                Color.White.copy(alpha = glowPulse * 0.3f),
-                                CircleShape
-                            )
-                    )
                     Icon(
                         imageVector = Icons.Default.Collections,
                         contentDescription = null,
@@ -980,53 +1016,340 @@ private fun SubmitCollectionBanner(
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.width(16.dp))
                 
-                Text(
-                    text = "🎨 Submit Your Collection",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    textAlign = TextAlign.Center
-                )
-                
-                Spacer(modifier = Modifier.height(6.dp))
-                
-                Text(
-                    text = "Get your NFT collection verified on MassaPay",
-                    fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.9f),
-                    textAlign = TextAlign.Center
-                )
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                // CTA Button
-                Surface(
-                    modifier = Modifier
-                        .wrapContentWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = Color.White.copy(alpha = 0.2f)
+                Column(
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
+                    Text(
+                        text = "Your NFT Collection",
+                        fontSize = 14.sp,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    if (isLoading && nftCount == 0) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Scanning...",
+                                fontSize = 28.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    } else {
                         Text(
-                            text = "Apply Now",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            text = "$nftCount NFTs",
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Icon(
-                            imageVector = Icons.Default.ArrowForward,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
                     }
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    Text(
+                        text = if (nftCount > 0) "Tap any NFT to view details" else "No NFTs found yet",
+                        fontSize = 13.sp,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NFTQuickStatsRow(
+    nfts: List<NFT>,
+    isLoading: Boolean,
+    isDarkTheme: Boolean
+) {
+    val cardColor = if (isDarkTheme) Color(0xFF1A1A2E) else Color.White
+    val textColor = if (isDarkTheme) Color.White else Color.Black
+    val iconContainerColor = if (isDarkTheme) Color.White.copy(alpha = 0.1f) else Color.Black
+    
+    // Calculate stats
+    val collectionCount = nfts.map { it.contractAddress }.distinct().size
+    val hasRareNfts = nfts.any { it.attributes.isNotEmpty() }
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Collections stat
+        QuickStatCard(
+            icon = Icons.Default.Folder,
+            label = "Collections",
+            value = if (isLoading && nfts.isEmpty()) "..." else collectionCount.toString(),
+            cardColor = cardColor,
+            textColor = textColor,
+            iconContainerColor = iconContainerColor,
+            isDarkTheme = isDarkTheme
+        )
+        
+        // Total NFTs stat
+        QuickStatCard(
+            icon = Icons.Default.Image,
+            label = "Total NFTs",
+            value = if (isLoading && nfts.isEmpty()) "..." else nfts.size.toString(),
+            cardColor = cardColor,
+            textColor = textColor,
+            iconContainerColor = iconContainerColor,
+            isDarkTheme = isDarkTheme
+        )
+        
+        // Status stat
+        QuickStatCard(
+            icon = if (isLoading) Icons.Default.Sync else Icons.Default.CheckCircle,
+            label = "Status",
+            value = if (isLoading) "Scanning" else "Ready",
+            cardColor = cardColor,
+            textColor = textColor,
+            iconContainerColor = iconContainerColor,
+            isDarkTheme = isDarkTheme
+        )
+    }
+}
+
+@Composable
+private fun QuickStatCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    cardColor: Color,
+    textColor: Color,
+    iconContainerColor: Color,
+    isDarkTheme: Boolean
+) {
+    Card(
+        modifier = Modifier.width(130.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDarkTheme) 0.dp else 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Icon container
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(iconContainerColor, RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = value,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = textColor
+            )
+            
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                color = textColor.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun NFTCardSkeleton(isDarkTheme: Boolean) {
+    val shimmerColors = if (isDarkTheme) {
+        listOf(
+            Color(0xFF1A1A2E),
+            Color(0xFF2A2A4E),
+            Color(0xFF1A1A2E)
+        )
+    } else {
+        listOf(
+            Color(0xFFE0E0E0),
+            Color(0xFFF5F5F5),
+            Color(0xFFE0E0E0)
+        )
+    }
+    
+    val transition = rememberInfiniteTransition(label = "skeleton")
+    val translateAnim by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1000f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "shimmer"
+    )
+    
+    val brush = Brush.linearGradient(
+        colors = shimmerColors,
+        start = Offset(translateAnim - 500f, 0f),
+        end = Offset(translateAnim, 0f)
+    )
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(0.8f),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDarkTheme) Color(0xFF1A1A2E) else Color.White
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+        )
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            // Image placeholder
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .background(brush)
+            )
+            
+            // Text placeholders
+            Column(
+                modifier = Modifier.padding(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.7f)
+                        .height(16.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(brush)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.5f)
+                        .height(12.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(brush)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyGalleryContent(
+    isDarkTheme: Boolean,
+    onImportClick: () -> Unit
+) {
+    val cardColor = if (isDarkTheme) Color(0xFF1A1A2E) else Color.White
+    val textColor = if (isDarkTheme) Color.White else Color.Black
+    val iconContainerColor = if (isDarkTheme) Color.White.copy(alpha = 0.1f) else Color.Black
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 16.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDarkTheme) 0.dp else 4.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Ghost icon with animation
+            val infiniteTransition = rememberInfiniteTransition(label = "empty")
+            val floatAnim by infiniteTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 10f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(2000, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "float"
+            )
+            
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .offset(y = floatAnim.dp)
+                    .background(iconContainerColor, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ImageNotSupported,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(20.dp))
+            
+            Text(
+                text = "No NFTs Found",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = textColor
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = "Your wallet doesn't have any NFTs yet.\nImport a collection or explore Massa NFTs!",
+                fontSize = 14.sp,
+                color = textColor.copy(alpha = 0.6f),
+                textAlign = TextAlign.Center,
+                lineHeight = 20.sp
+            )
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Import collection button with black container style
+            Surface(
+                modifier = Modifier.clickable { onImportClick() },
+                shape = RoundedCornerShape(16.dp),
+                color = iconContainerColor
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Import Collection",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
                 }
             }
         }

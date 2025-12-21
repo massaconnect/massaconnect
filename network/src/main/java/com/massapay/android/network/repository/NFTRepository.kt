@@ -95,7 +95,13 @@ class NFTRepository @Inject constructor(
         )
     )
     
-    private val httpClient = OkHttpClient()
+    // Optimized HTTP client for parallel RPC calls
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
     
     init {
         // Load custom collections from SharedPreferences
@@ -291,13 +297,17 @@ class NFTRepository @Inject constructor(
     // NFT cache for instant loading
     private val nftCache = mutableMapOf<String, List<NFT>>()
     private var lastCacheTime = 0L
-    private val CACHE_DURATION_MS = 30 * 1000L // 30 seconds for testing
+    private val CACHE_DURATION_MS = 60 * 1000L // 60 seconds cache
+    
+    // Balance cache to avoid repeated queries
+    private val balanceCache = mutableMapOf<String, Map<String, Int>>() // address -> (contract -> balance)
     
     /**
      * Clears the NFT cache to force a fresh fetch on next call
      */
     fun clearCache() {
         nftCache.clear()
+        balanceCache.clear()
         lastCacheTime = 0L
         android.util.Log.d("NFTRepository", "NFT cache cleared")
     }
@@ -305,55 +315,88 @@ class NFTRepository @Inject constructor(
     fun getNFTs(address: String): Flow<Result<List<NFT>>> = flow {
         try {
             emit(Result.Loading)
-            android.util.Log.d("NFTRepository", "Fetching NFTs for address: $address")
+            android.util.Log.d("NFTRepository", "🔍 Starting NFT scan for: $address")
+            val startTime = System.currentTimeMillis()
             
             // Check cache first for instant display
             val cachedNfts = nftCache[address]
             val cacheAge = System.currentTimeMillis() - lastCacheTime
             if (cachedNfts != null && cachedNfts.isNotEmpty() && cacheAge < CACHE_DURATION_MS) {
-                android.util.Log.d("NFTRepository", "Returning ${cachedNfts.size} cached NFTs")
+                android.util.Log.d("NFTRepository", "✅ Returning ${cachedNfts.size} cached NFTs (${cacheAge}ms old)")
                 emit(Result.Success(cachedNfts))
                 return@flow
             }
             
             val allNfts = mutableListOf<NFT>()
+            val collections = getAllCollections()
             
-            // First try PurrfectUniverse API to get user's NFTs
-            try {
-                val puNfts = fetchFromPurrfectUniverseAPI(address)
-                allNfts.addAll(puNfts)
-                android.util.Log.d("NFTRepository", "Found ${puNfts.size} NFTs from PurrfectUniverse API")
-            } catch (e: Exception) {
-                android.util.Log.w("NFTRepository", "PurrfectUniverse API failed: ${e.message}")
+            // STEP 1: Query balanceOf for ALL collections in parallel (fast filtering)
+            android.util.Log.d("NFTRepository", "📊 Step 1: Checking balances for ${collections.size} collections in parallel...")
+            
+            val collectionsWithBalance = mutableListOf<Pair<KnownCollection, Int>>()
+            
+            supervisorScope {
+                val balanceJobs = collections.map { collection ->
+                    async(Dispatchers.IO) {
+                        try {
+                            val balance = getBalanceOf(address, collection)
+                            if (balance > 0) {
+                                android.util.Log.d("NFTRepository", "💰 ${collection.name}: balance = $balance")
+                                Pair(collection, balance)
+                            } else {
+                                null
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.w("NFTRepository", "⚠️ ${collection.name}: balance check failed - ${e.message}")
+                            null
+                        }
+                    }
+                }
+                
+                balanceJobs.awaitAll().filterNotNull().forEach { 
+                    collectionsWithBalance.add(it) 
+                }
             }
             
-            // Query collections in parallel if API didn't return results
-            if (allNfts.isEmpty()) {
-                val collections = getAllCollections()
+            val balanceCheckTime = System.currentTimeMillis() - startTime
+            android.util.Log.d("NFTRepository", "✅ Balance check completed in ${balanceCheckTime}ms. Found ${collectionsWithBalance.size} collections with NFTs")
+            
+            // STEP 2: For collections with balance, find owned token IDs
+            if (collectionsWithBalance.isNotEmpty()) {
+                android.util.Log.d("NFTRepository", "🔎 Step 2: Finding token IDs for ${collectionsWithBalance.size} collections...")
                 
-                // Query all collections in parallel using supervisorScope (won't cancel all on single failure)
                 supervisorScope {
-                    val results = collections.map { collection ->
+                    val nftJobs = collectionsWithBalance.map { (collection, balance) ->
                         async(Dispatchers.IO) {
                             try {
-                                queryNFTContract(address, collection)
+                                val tokenIds = getOwnedTokenIdsFast(address, collection, balance)
+                                android.util.Log.d("NFTRepository", "🎯 ${collection.name}: found ${tokenIds.size} token IDs: $tokenIds")
+                                
+                                // Fetch NFT details in parallel
+                                val nftDetails = tokenIds.mapNotNull { tokenId ->
+                                    try {
+                                        fetchNFTDetails(tokenId, collection, address)
+                                    } catch (e: Exception) {
+                                        android.util.Log.w("NFTRepository", "⚠️ Failed to fetch NFT #$tokenId: ${e.message}")
+                                        null
+                                    }
+                                }
+                                nftDetails
                             } catch (e: Exception) {
-                                android.util.Log.w("NFTRepository", "Error querying ${collection.name}: ${e.message}")
-                                emptyList<NFT>()
+                                android.util.Log.w("NFTRepository", "⚠️ Error processing ${collection.name}: ${e.message}")
+                                emptyList()
                             }
                         }
                     }
                     
-                    // Collect all results at once - faster than sequential
-                    try {
-                        results.awaitAll().forEach { nftsFromContract ->
-                            allNfts.addAll(nftsFromContract)
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.w("NFTRepository", "Some collection queries failed: ${e.message}")
+                    nftJobs.awaitAll().forEach { nftsFromCollection ->
+                        allNfts.addAll(nftsFromCollection)
                     }
                 }
             }
+            
+            val totalTime = System.currentTimeMillis() - startTime
+            android.util.Log.d("NFTRepository", "🏁 NFT scan completed in ${totalTime}ms. Found ${allNfts.size} NFTs total")
             
             // Update cache
             if (allNfts.isNotEmpty()) {
@@ -364,137 +407,327 @@ class NFTRepository @Inject constructor(
             emit(Result.Success(allNfts))
             
         } catch (e: Exception) {
-            android.util.Log.e("NFTRepository", "Error getting NFTs", e)
+            android.util.Log.e("NFTRepository", "❌ Error getting NFTs", e)
             emit(Result.Error(e))
         }
     }
     
-    private suspend fun fetchFromPurrfectUniverseAPI(address: String): List<NFT> = withContext(Dispatchers.IO) {
-        val nfts = mutableListOf<NFT>()
+    /**
+     * Fast balance check using direct RPC call
+     */
+    private suspend fun getBalanceOf(address: String, collection: KnownCollection): Int = withContext(Dispatchers.IO) {
+        val addressBytes = address.toByteArray(Charsets.UTF_8)
+        val parameter = mutableListOf<Int>()
         
-        // Try to fetch user's NFTs from PurrfectUniverse API
-        try {
-            val request = Request.Builder()
-                .url("https://api.purrfectuniverse.com/user/$address/nfts")
-                .build()
-            
-            httpClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: return@withContext emptyList()
-                    val jsonArray = JSONArray(body)
-                    
-                    for (i in 0 until jsonArray.length()) {
-                        val nftJson = jsonArray.getJSONObject(i)
-                        val nft = parseNFTFromJson(nftJson, address)
-                        if (nft != null) {
-                            nfts.add(nft)
-                        }
+        // Add length prefix (4 bytes, little-endian u32)
+        val length = addressBytes.size
+        parameter.add(length and 0xFF)
+        parameter.add((length shr 8) and 0xFF)
+        parameter.add((length shr 16) and 0xFF)
+        parameter.add((length shr 24) and 0xFF)
+        addressBytes.forEach { parameter.add(it.toInt() and 0xFF) }
+        
+        val requestBody = """{"jsonrpc":"2.0","id":1,"method":"execute_read_only_call","params":[[{"target_address":"${collection.contractAddress}","target_function":"balanceOf","parameter":$parameter,"max_gas":100000000}]]}"""
+        
+        val request = Request.Builder()
+            .url("https://mainnet.massa.net/api/v2")
+            .post(requestBody.toRequestBody("application/json".toMediaTypeOrNull()))
+            .build()
+        
+        httpClient.newCall(request).execute().use { response ->
+            val body = response.body?.string() ?: return@withContext 0
+            if (response.isSuccessful && body.contains("\"result\"")) {
+                val json = JSONObject(body)
+                val resultArray = json.optJSONArray("result")
+                if (resultArray != null && resultArray.length() > 0) {
+                    val firstResult = resultArray.getJSONObject(0)
+                    val resultObj = firstResult.optJSONObject("result")
+                    val okArray = resultObj?.optJSONArray("Ok")
+                    if (okArray != null && okArray.length() > 0) {
+                        return@withContext decodeU64FromJsonArray(okArray)
                     }
                 }
             }
-        } catch (e: Exception) {
-            android.util.Log.d("NFTRepository", "PurrfectUniverse user API not available: ${e.message}")
         }
-        
-        nfts
+        0
     }
     
-    private suspend fun queryNFTContract(address: String, collection: KnownCollection): List<NFT> = withContext(Dispatchers.IO) {
-        val nfts = mutableListOf<NFT>()
+    /**
+     * Fast method to get owned token IDs
+     * Tries multiple strategies: tokenOfOwnerByIndex, tokensOfOwner, then smart scanning
+     */
+    private suspend fun getOwnedTokenIdsFast(address: String, collection: KnownCollection, balance: Int): List<Int> {
+        val tokenIds = mutableListOf<Int>()
+        
+        // Strategy 1: Try tokenOfOwnerByIndex (ERC721Enumerable standard)
+        val idsFromEnumerable = tryTokenOfOwnerByIndex(address, collection, balance)
+        if (idsFromEnumerable.isNotEmpty()) {
+            android.util.Log.d("NFTRepository", "✅ Got ${idsFromEnumerable.size} IDs from tokenOfOwnerByIndex")
+            return idsFromEnumerable
+        }
+        
+        // Strategy 2: Try tokensOfOwner (some contracts have this)
+        val idsFromTokensOf = tryTokensOfOwner(address, collection)
+        if (idsFromTokensOf.isNotEmpty()) {
+            android.util.Log.d("NFTRepository", "✅ Got ${idsFromTokensOf.size} IDs from tokensOfOwner")
+            return idsFromTokensOf
+        }
+        
+        // Strategy 3: Smart scan - only if we have to
+        android.util.Log.d("NFTRepository", "🔄 Using smart scan for ${collection.name}")
+        return smartScanForTokens(address, collection, balance)
+    }
+    
+    /**
+     * Try to use tokenOfOwnerByIndex (ERC721Enumerable)
+     */
+    private suspend fun tryTokenOfOwnerByIndex(address: String, collection: KnownCollection, balance: Int): List<Int> = withContext(Dispatchers.IO) {
+        val tokenIds = mutableListOf<Int>()
         
         try {
-            // Massa AS serialization format for strings:
-            // First 4 bytes: string length (u32, little-endian)
-            // Then: UTF-8 bytes of the string
+            // Query all indices in parallel
+            supervisorScope {
+                val jobs = (0 until balance).map { index ->
+                    async {
+                        try {
+                            getTokenOfOwnerByIndex(address, collection, index)
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+                }
+                jobs.awaitAll().filterNotNull().forEach { tokenIds.add(it) }
+            }
+        } catch (e: Exception) {
+            android.util.Log.d("NFTRepository", "tokenOfOwnerByIndex not available: ${e.message}")
+        }
+        
+        tokenIds
+    }
+    
+    /**
+     * Get single token ID by index
+     */
+    private suspend fun getTokenOfOwnerByIndex(address: String, collection: KnownCollection, index: Int): Int? = withContext(Dispatchers.IO) {
+        val addressBytes = address.toByteArray(Charsets.UTF_8)
+        val parameter = mutableListOf<Int>()
+        
+        // Encode address (4-byte length + UTF-8)
+        parameter.add(addressBytes.size and 0xFF)
+        parameter.add((addressBytes.size shr 8) and 0xFF)
+        parameter.add((addressBytes.size shr 16) and 0xFF)
+        parameter.add((addressBytes.size shr 24) and 0xFF)
+        addressBytes.forEach { parameter.add(it.toInt() and 0xFF) }
+        
+        // Encode index as u256 (32 bytes, little-endian)
+        var value = index.toLong()
+        for (i in 0..7) {
+            parameter.add((value and 0xFF).toInt())
+            value = value shr 8
+        }
+        for (i in 8..31) parameter.add(0)
+        
+        val requestBody = """{"jsonrpc":"2.0","id":1,"method":"execute_read_only_call","params":[[{"target_address":"${collection.contractAddress}","target_function":"tokenOfOwnerByIndex","parameter":$parameter,"max_gas":100000000}]]}"""
+        
+        val request = Request.Builder()
+            .url("https://mainnet.massa.net/api/v2")
+            .post(requestBody.toRequestBody("application/json".toMediaTypeOrNull()))
+            .build()
+        
+        httpClient.newCall(request).execute().use { response ->
+            val body = response.body?.string() ?: return@withContext null
+            if (response.isSuccessful && body.contains("\"Ok\"")) {
+                val json = JSONObject(body)
+                val resultArray = json.optJSONArray("result")
+                if (resultArray != null && resultArray.length() > 0) {
+                    val okArray = resultArray.getJSONObject(0)
+                        .optJSONObject("result")
+                        ?.optJSONArray("Ok")
+                    if (okArray != null && okArray.length() > 0) {
+                        return@withContext decodeU64FromJsonArray(okArray)
+                    }
+                }
+            }
+        }
+        null
+    }
+    
+    /**
+     * Try tokensOfOwner function
+     */
+    private suspend fun tryTokensOfOwner(address: String, collection: KnownCollection): List<Int> = withContext(Dispatchers.IO) {
+        try {
             val addressBytes = address.toByteArray(Charsets.UTF_8)
             val parameter = mutableListOf<Int>()
             
-            // Add length prefix (4 bytes, little-endian u32)
-            val length = addressBytes.size
-            parameter.add(length and 0xFF)
-            parameter.add((length shr 8) and 0xFF)
-            parameter.add((length shr 16) and 0xFF)
-            parameter.add((length shr 24) and 0xFF)
-            
-            // Add the address bytes
+            parameter.add(addressBytes.size and 0xFF)
+            parameter.add((addressBytes.size shr 8) and 0xFF)
+            parameter.add((addressBytes.size shr 16) and 0xFF)
+            parameter.add((addressBytes.size shr 24) and 0xFF)
             addressBytes.forEach { parameter.add(it.toInt() and 0xFF) }
             
-            val balanceRequest = JsonRpcRequest(
-                method = "execute_read_only_call",
-                params = listOf(
-                    listOf(
-                        mapOf(
-                            "target_address" to collection.contractAddress,
-                            "target_function" to "balanceOf",
-                            "parameter" to parameter,
-                            "max_gas" to 100000000,
-                            "caller_address" to null,
-                            "coins" to null,
-                            "fee" to null
-                        )
-                    )
-                )
-            )
+            val requestBody = """{"jsonrpc":"2.0","id":1,"method":"execute_read_only_call","params":[[{"target_address":"${collection.contractAddress}","target_function":"tokensOfOwner","parameter":$parameter,"max_gas":100000000}]]}"""
             
-            android.util.Log.d("NFTRepository", "Calling balanceOf for ${collection.name} with param length: ${parameter.size}")
-            
-            // Make raw HTTP call to avoid Gson parsing issues
-            val requestBody = """{"jsonrpc":"2.0","id":1,"method":"execute_read_only_call","params":[[{"target_address":"${collection.contractAddress}","target_function":"balanceOf","parameter":$parameter,"max_gas":100000000,"caller_address":null,"coins":null,"fee":null}]]}"""
-            
-            val mediaType = "application/json".toMediaTypeOrNull()
-            val httpRequest = Request.Builder()
+            val request = Request.Builder()
                 .url("https://mainnet.massa.net/api/v2")
-                .post(requestBody.toRequestBody(mediaType))
+                .post(requestBody.toRequestBody("application/json".toMediaTypeOrNull()))
                 .build()
             
-            httpClient.newCall(httpRequest).execute().use { response ->
-                val responseBody = response.body?.string() ?: ""
-                android.util.Log.d("NFTRepository", "balanceOf raw response: $responseBody")
-                
-                if (response.isSuccessful && responseBody.contains("\"result\"")) {
-                    val json = JSONObject(responseBody)
+            httpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: return@withContext emptyList()
+                if (response.isSuccessful && body.contains("\"Ok\"")) {
+                    val json = JSONObject(body)
+                    val okArray = json.optJSONArray("result")
+                        ?.optJSONObject(0)
+                        ?.optJSONObject("result")
+                        ?.optJSONArray("Ok")
                     
-                    if (json.has("result")) {
-                        val resultArray = json.optJSONArray("result")
-                        if (resultArray != null && resultArray.length() > 0) {
-                            val firstResult = resultArray.getJSONObject(0)
-                            val resultObj = firstResult.optJSONObject("result")
-                            
-                            if (resultObj != null && resultObj.has("Ok")) {
-                                val okArray = resultObj.optJSONArray("Ok")
-                                if (okArray != null && okArray.length() > 0) {
-                                    // Decode u256 balance (first 8 bytes as u64 for simplicity)
-                                    val balance = decodeU64FromJsonArray(okArray)
-                                    android.util.Log.d("NFTRepository", "Balance for ${collection.name}: $balance")
-                                    
-                                    if (balance > 0) {
-                                        // User owns NFTs from this collection
-                                        val tokenIds = getOwnedTokenIds(address, collection, balance)
-                                        
-                                        for (tokenId in tokenIds) {
-                                            try {
-                                                val nft = fetchNFTDetails(tokenId, collection, address)
-                                                if (nft != null) {
-                                                    nfts.add(nft)
-                                                }
-                                            } catch (e: Exception) {
-                                                android.util.Log.w("NFTRepository", "Error fetching NFT #$tokenId: ${e.message}")
-                                            }
-                                        }
-                                    }
-                                }
-                            } else if (resultObj != null && resultObj.has("Error")) {
-                                android.util.Log.w("NFTRepository", "Contract error: ${resultObj.getString("Error")}")
-                            }
+                    if (okArray != null && okArray.length() > 0) {
+                        val bytes = (0 until okArray.length()).map { okArray.getInt(it) }
+                        return@withContext decodeTokenIdsFromBytes(bytes)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.d("NFTRepository", "tokensOfOwner not available: ${e.message}")
+        }
+        emptyList()
+    }
+    
+    /**
+     * Smart scan: Uses BATCH RPC calls to check multiple tokens at once
+     * This is dramatically faster than individual calls
+     */
+    private suspend fun smartScanForTokens(address: String, collection: KnownCollection, targetBalance: Int): List<Int> = withContext(Dispatchers.IO) {
+        val foundTokens = java.util.concurrent.ConcurrentHashMap<Int, Boolean>()
+        
+        // Get totalSupply to know range
+        val totalSupply = getTotalSupply(collection) ?: collection.totalSupply
+        android.util.Log.d("NFTRepository", "📊 Smart scan: looking for $targetBalance tokens in range 1-$totalSupply")
+        
+        // Use batch RPC - check 20 tokens per RPC call (limited by JSON-RPC)
+        val rpcBatchSize = 20
+        // Process multiple RPC batches in parallel
+        val parallelBatches = 5
+        val tokensPerRound = rpcBatchSize * parallelBatches // 100 tokens per round
+        
+        var currentEnd = totalSupply
+        
+        while (currentEnd > 0 && foundTokens.size < targetBalance) {
+            val roundStart = maxOf(1, currentEnd - tokensPerRound + 1)
+            
+            // Split into parallel batch jobs
+            val batchJobs = mutableListOf<kotlinx.coroutines.Deferred<List<Int>>>()
+            
+            supervisorScope {
+                var batchStart = currentEnd
+                while (batchStart >= roundStart) {
+                    val batchEnd = maxOf(roundStart, batchStart - rpcBatchSize + 1)
+                    val tokenRange = (batchStart downTo batchEnd).toList()
+                    
+                    batchJobs.add(async {
+                        checkTokenOwnersBatch(tokenRange, collection, address)
+                    })
+                    
+                    batchStart = batchEnd - 1
+                }
+                
+                // Wait for all batches and collect results
+                try {
+                    batchJobs.awaitAll().flatten().forEach { tokenId ->
+                        foundTokens[tokenId] = true
+                        android.util.Log.d("NFTRepository", "🎯 Found token #$tokenId")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("NFTRepository", "Batch error: ${e.message}")
+                }
+            }
+            
+            // Move to next round
+            currentEnd = roundStart - 1
+            
+            // Early exit if we found all tokens
+            if (foundTokens.size >= targetBalance) {
+                android.util.Log.d("NFTRepository", "✅ Found all $targetBalance tokens, stopping scan")
+                break
+            }
+        }
+        
+        foundTokens.keys.toList().sortedDescending()
+    }
+    
+    /**
+     * Check multiple token owners in a single batch RPC call
+     */
+    private suspend fun checkTokenOwnersBatch(tokenIds: List<Int>, collection: KnownCollection, targetAddress: String): List<Int> = withContext(Dispatchers.IO) {
+        val ownedTokens = mutableListOf<Int>()
+        
+        try {
+            // Build batch request with multiple read-only calls
+            val callsArray = JSONArray()
+            
+            for (tokenId in tokenIds) {
+                // Encode tokenId as u256 bytes (32 bytes, little-endian)
+                val tokenIdBytes = JSONArray()
+                var value = tokenId.toLong()
+                for (i in 0..7) {
+                    tokenIdBytes.put((value and 0xFF).toInt())
+                    value = value shr 8
+                }
+                for (i in 8..31) {
+                    tokenIdBytes.put(0)
+                }
+                
+                callsArray.put(JSONObject().apply {
+                    put("target_address", collection.contractAddress)
+                    put("target_function", "ownerOf")
+                    put("parameter", tokenIdBytes)
+                    put("max_gas", 50000000)
+                })
+            }
+            
+            val requestBody = JSONObject().apply {
+                put("jsonrpc", "2.0")
+                put("id", 1)
+                put("method", "execute_read_only_call")
+                put("params", JSONArray().put(callsArray))
+            }.toString()
+            
+            val request = Request.Builder()
+                .url("https://mainnet.massa.net/api/v2")
+                .post(requestBody.toRequestBody("application/json".toMediaTypeOrNull()))
+                .build()
+            
+            httpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: return@withContext emptyList()
+                
+                val json = JSONObject(body)
+                val resultArray = json.optJSONArray("result") ?: return@withContext emptyList()
+                
+                // Process each result
+                for (i in 0 until minOf(resultArray.length(), tokenIds.size)) {
+                    val resultObj = resultArray.optJSONObject(i)?.optJSONObject("result")
+                    val okArray = resultObj?.optJSONArray("Ok")
+                    
+                    if (okArray != null && okArray.length() > 0) {
+                        // Decode owner address
+                        val bytes = ByteArray(okArray.length())
+                        for (j in 0 until okArray.length()) {
+                            bytes[j] = okArray.getInt(j).toByte()
+                        }
+                        val owner = String(bytes, Charsets.UTF_8)
+                        
+                        if (owner.equals(targetAddress, ignoreCase = true)) {
+                            ownedTokens.add(tokenIds[i])
                         }
                     }
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.w("NFTRepository", "Error querying contract ${collection.contractAddress}: ${e.message}")
+            android.util.Log.w("NFTRepository", "Batch RPC error: ${e.message}")
         }
         
-        nfts
+        ownedTokens
     }
     
     private fun decodeU64FromJsonArray(array: org.json.JSONArray): Int {
@@ -505,193 +738,6 @@ class NFTRepository @Inject constructor(
             result = result or (byteVal shl (i * 8))
         }
         return result.toInt()
-    }
-    
-    private fun decodeU64FromBytes(bytes: List<*>): Int {
-        if (bytes.isEmpty()) return 0
-        var result = 0L
-        for (i in bytes.indices.take(8)) {
-            val byteVal = when (val b = bytes[i]) {
-                is Number -> b.toLong() and 0xFF
-                else -> 0L
-            }
-            result = result or (byteVal shl (i * 8))
-        }
-        return result.toInt()
-    }
-    
-    private suspend fun getOwnedTokenIds(address: String, collection: KnownCollection, balance: Int): List<Int> {
-        val tokenIds = mutableListOf<Int>()
-        val addressBytes = address.toByteArray(Charsets.UTF_8).map { it.toInt() and 0xFF }
-        
-        // Try to call tokensOfOwner if available
-        try {
-            val request = JsonRpcRequest(
-                method = "execute_read_only_call",
-                params = listOf(
-                    listOf(
-                        mapOf(
-                            "target_address" to collection.contractAddress,
-                            "target_function" to "tokensOfOwner",
-                            "parameter" to addressBytes,
-                            "max_gas" to 100000000,
-                            "caller_address" to null,
-                            "coins" to null,
-                            "fee" to null
-                        )
-                    )
-                )
-            )
-            
-            val response = massaApi.callView(request)
-            if (response.error == null && response.result != null) {
-                val responseList = response.result as? List<*>
-                val firstResponse = responseList?.firstOrNull() as? Map<String, Any>
-                val resultData = firstResponse?.get("result") as? Map<String, Any>
-                val okBytes = resultData?.get("Ok") as? List<*>
-                
-                if (okBytes != null && okBytes.isNotEmpty()) {
-                    // Decode token IDs array from bytes
-                    val ids = decodeTokenIdsFromBytes(okBytes)
-                    tokenIds.addAll(ids)
-                    android.util.Log.d("NFTRepository", "Found token IDs from tokensOfOwner: $ids")
-                }
-            }
-        } catch (e: Exception) {
-            android.util.Log.d("NFTRepository", "tokensOfOwner not available: ${e.message}")
-        }
-        
-        // If tokensOfOwner failed, try to enumerate by checking ownership with PARALLEL queries
-        if (tokenIds.isEmpty() && balance > 0) {
-            android.util.Log.d("NFTRepository", "Scanning for owned tokens (balance: $balance), looking for address: $address")
-            
-            // First find the highest existing token using binary search
-            val maxTokenId = findHighestTokenId(collection)
-            android.util.Log.d("NFTRepository", "Highest existing token ID: $maxTokenId")
-            
-            // Scan in batches of 40 tokens in parallel for maximum speed
-            val batchSize = 40
-            val foundTokens = java.util.concurrent.ConcurrentHashMap<Int, String>()
-            
-            supervisorScope {
-                for (batchStart in maxTokenId downTo 1 step batchSize) {
-                    // Check if we already found all tokens
-                    if (foundTokens.size >= balance) break
-                    
-                    val batchEnd = maxOf(1, batchStart - batchSize + 1)
-                    val batchJobs = (batchStart downTo batchEnd).map { tokenId ->
-                        async(Dispatchers.IO) {
-                            try {
-                                val owner = getTokenOwner(tokenId, collection)
-                                if (owner != null && owner.equals(address, ignoreCase = true)) {
-                                    foundTokens[tokenId] = owner
-                                    android.util.Log.d("NFTRepository", "Found owned token: $tokenId owned by $owner")
-                                }
-                            } catch (e: Exception) {
-                                // Token might not exist, ignore
-                            }
-                        }
-                    }
-                    
-                    // Wait for batch to complete using awaitAll for speed
-                    try {
-                        batchJobs.awaitAll()
-                    } catch (e: Exception) {
-                        // Some jobs may fail, that's OK
-                    }
-                    
-                    // Check if we found enough
-                    if (foundTokens.size >= balance) break
-                }
-            }
-            
-            tokenIds.addAll(foundTokens.keys.sortedDescending())
-        }
-        
-        return tokenIds
-    }
-    
-    private suspend fun getTotalSupply(collection: KnownCollection): Int? {
-        try {
-            val jsonBody = JSONObject().apply {
-                put("jsonrpc", "2.0")
-                put("id", 1)
-                put("method", "execute_read_only_call")
-                put("params", org.json.JSONArray().apply {
-                    put(org.json.JSONArray().apply {
-                        put(JSONObject().apply {
-                            put("target_address", collection.contractAddress)
-                            put("target_function", "totalSupply")
-                            put("parameter", org.json.JSONArray()) // No parameters
-                            put("max_gas", 100000000)
-                        })
-                    })
-                })
-            }.toString()
-            
-            val request = Request.Builder()
-                .url("https://mainnet.massa.net/api/v2")
-                .post(jsonBody.toRequestBody("application/json".toMediaTypeOrNull()))
-                .build()
-            
-            httpClient.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: return null
-                val json = JSONObject(body)
-                val resultArray = json.optJSONArray("result")
-                if (resultArray != null && resultArray.length() > 0) {
-                    val firstResult = resultArray.getJSONObject(0)
-                    val resultData = firstResult.optJSONObject("result")
-                    val okArray = resultData?.optJSONArray("Ok")
-                    
-                    if (okArray != null && okArray.length() >= 8) {
-                        // Read u256 as little-endian (but we only need first 8 bytes for reasonable supply)
-                        var supply = 0L
-                        for (i in 0..7) {
-                            supply = supply or ((okArray.getInt(i).toLong() and 0xFF) shl (i * 8))
-                        }
-                        android.util.Log.d("NFTRepository", "Total supply for ${collection.name}: $supply")
-                        return supply.toInt()
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            android.util.Log.d("NFTRepository", "Error getting totalSupply: ${e.message}")
-        }
-        return null
-    }
-    
-    /**
-     * Find the highest existing token ID using binary search.
-     * This is needed because totalSupply represents max tokens, not minted tokens.
-     */
-    private suspend fun findHighestTokenId(collection: KnownCollection): Int {
-        var low = 1
-        var high = collection.totalSupply
-        var lastExisting = 0
-        
-        // Binary search to find the highest minted token
-        while (low <= high) {
-            val mid = (low + high) / 2
-            val exists = tokenExists(mid, collection)
-            
-            if (exists) {
-                lastExisting = mid
-                low = mid + 1  // Look for higher tokens
-            } else {
-                high = mid - 1  // Look for lower tokens
-            }
-        }
-        
-        android.util.Log.d("NFTRepository", "Binary search found highest token: $lastExisting for ${collection.name}")
-        return lastExisting
-    }
-    
-    /**
-     * Check if a token exists (has an owner)
-     */
-    private suspend fun tokenExists(tokenId: Int, collection: KnownCollection): Boolean {
-        val owner = getTokenOwner(tokenId, collection)
-        return owner != null && owner.isNotEmpty()
     }
     
     private fun decodeTokenIdsFromBytes(bytes: List<*>): List<Int> {
@@ -720,7 +766,38 @@ class NFTRepository @Inject constructor(
         return ids
     }
     
-    private suspend fun getTokenOwner(tokenId: Int, collection: KnownCollection): String? {
+    private suspend fun getTotalSupply(collection: KnownCollection): Int? = withContext(Dispatchers.IO) {
+        try {
+            val requestBody = """{"jsonrpc":"2.0","id":1,"method":"execute_read_only_call","params":[[{"target_address":"${collection.contractAddress}","target_function":"totalSupply","parameter":[],"max_gas":100000000}]]}"""
+            
+            val request = Request.Builder()
+                .url("https://mainnet.massa.net/api/v2")
+                .post(requestBody.toRequestBody("application/json".toMediaTypeOrNull()))
+                .build()
+            
+            httpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: return@withContext null
+                val json = JSONObject(body)
+                val okArray = json.optJSONArray("result")
+                    ?.optJSONObject(0)
+                    ?.optJSONObject("result")
+                    ?.optJSONArray("Ok")
+                
+                if (okArray != null && okArray.length() >= 8) {
+                    var supply = 0L
+                    for (i in 0..7) {
+                        supply = supply or ((okArray.getInt(i).toLong() and 0xFF) shl (i * 8))
+                    }
+                    return@withContext supply.toInt()
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.d("NFTRepository", "Error getting totalSupply: ${e.message}")
+        }
+        null
+    }
+    
+    private suspend fun getTokenOwner(tokenId: Int, collection: KnownCollection): String? = withContext(Dispatchers.IO) {
         try {
             // Encode tokenId as u256 bytes (32 bytes, little-endian)
             val tokenIdBytes = mutableListOf<Int>()
@@ -758,8 +835,7 @@ class NFTRepository @Inject constructor(
                 .build()
             
             httpClient.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: return null
-                android.util.Log.d("NFTRepository", "ownerOf response for token $tokenId: $body")
+                val body = response.body?.string() ?: return@withContext null
                 
                 val json = JSONObject(body)
                 val resultArray = json.optJSONArray("result")
@@ -775,15 +851,14 @@ class NFTRepository @Inject constructor(
                             bytes[i] = okArray.getInt(i).toByte()
                         }
                         val owner = String(bytes, Charsets.UTF_8)
-                        android.util.Log.d("NFTRepository", "Token $tokenId owner: $owner")
-                        return owner
+                        return@withContext owner
                     }
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.d("NFTRepository", "Error getting owner of token $tokenId: ${e.message}")
+            // Silently ignore - token might not exist
         }
-        return null
+        null
     }
     
     /**

@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-Android-green.svg)](https://www.android.com/)
-[![Version](https://img.shields.io/badge/Version-1.2.0-blue.svg)](https://github.com/massawallet/massapay/releases)
+[![Version](https://img.shields.io/badge/Version-1.2.1-blue.svg)](https://github.com/massawallet/massapay/releases)
 
 [Download APK](https://github.com/massawallet/massapay/releases/latest) | [Privacy Policy](PRIVACY_POLICY_EN.md) | [Report Bug](https://github.com/massawallet/massapay/issues)
 

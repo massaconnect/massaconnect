@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -124,79 +125,92 @@ fun PortfolioScreen(
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Total Value Hero Card
+            // Total Value Hero Card with gradient
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = cardColor),
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                     shape = RoundedCornerShape(24.dp),
-                    elevation = CardDefaults.cardElevation(
-                        defaultElevation = if (isDarkTheme) 0.dp else 4.dp
-                    )
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
-                    Column(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                            .background(
+                                brush = Brush.linearGradient(
+                                    colors = listOf(
+                                        Color(0xFF1a1a2e),
+                                        Color(0xFF16213e)
+                                    )
+                                ),
+                                shape = RoundedCornerShape(24.dp)
+                            )
+                            .padding(24.dp)
                     ) {
-                        // Icon container
-                        Surface(
-                            modifier = Modifier.size(64.dp),
-                            shape = CircleShape,
-                            color = iconContainerColor
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            // Icon container - white icon on black bg (or inverse for light theme)
+                            Box(
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .background(
+                                        color = Color.White,
+                                        shape = RoundedCornerShape(20.dp)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Icon(
                                     Icons.Filled.AccountBalanceWallet,
                                     contentDescription = null,
-                                    modifier = Modifier.size(32.dp),
-                                    tint = iconTintColor
+                                    modifier = Modifier.size(36.dp),
+                                    tint = Color.Black
                                 )
                             }
-                        }
-                        
-                        Text(
-                            "Total Portfolio Value",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = textSecondary
-                        )
-                        
-                        if (uiState.isLoading) {
-                            Box(
-                                modifier = Modifier
-                                    .width(180.dp)
-                                    .height(48.dp)
-                                    .background(
-                                        textSecondary.copy(alpha = shimmerAlpha * 0.2f),
-                                        RoundedCornerShape(12.dp)
-                                    )
-                            )
-                        } else {
+                            
                             Text(
-                                "$${String.format("%,.2f", uiState.totalUsdValue.toDouble())}",
-                                style = MaterialTheme.typography.displaySmall.copy(
-                                    fontWeight = FontWeight.Black,
-                                    letterSpacing = (-1).sp
-                                ),
-                                color = textPrimary
+                                "Total Portfolio Value",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White.copy(alpha = 0.8f)
                             )
-                        }
-                        
-                        // Assets count badge
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = buttonContainerColor
-                        ) {
-                            Text(
-                                "${uiState.tokens.size} Assets",
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                style = MaterialTheme.typography.labelLarge.copy(
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = buttonContentColor
-                            )
+                            
+                            if (uiState.isLoading) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(180.dp)
+                                        .height(48.dp)
+                                        .background(
+                                            Color.White.copy(alpha = shimmerAlpha * 0.2f),
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                )
+                            } else {
+                                Text(
+                                    "$${String.format("%,.2f", uiState.totalUsdValue.toDouble())}",
+                                    style = MaterialTheme.typography.displaySmall.copy(
+                                        fontWeight = FontWeight.Black,
+                                        letterSpacing = (-1).sp
+                                    ),
+                                    color = Color.White
+                                )
+                            }
+                            
+                            // Assets count badge
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = Color.White.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    "${uiState.tokens.size} Assets",
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    style = MaterialTheme.typography.labelLarge.copy(
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    color = Color.White
+                                )
+                            }
                         }
                     }
                 }

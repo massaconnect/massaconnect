@@ -352,275 +352,284 @@ private fun RollsBalanceCard(
                 alpha = cardAlpha
             },
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = cardColor),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isDarkTheme) 0.dp else 4.dp
-        )
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Header row with title
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Your Staking",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = textColor
+                .background(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFF1a1a2e),
+                            Color(0xFF16213e)
+                        )
+                    ),
+                    shape = RoundedCornerShape(24.dp)
                 )
-                
-                // Status badge
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (targetRolls > 0) Color(0xFF4CAF50).copy(alpha = 0.15f) else secondaryTextColor.copy(alpha = 0.1f)
+                .padding(24.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header row with title and status
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (targetRolls > 0) "Active" else "Inactive",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = if (targetRolls > 0) Color(0xFF4CAF50) else secondaryTextColor
+                        text = "Your Staking",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
                     )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Main balance section
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Left side - Icon and Rolls
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Animated Roll icon with glow
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.size(72.dp)
+                    
+                    // Status badge
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (targetRolls > 0) Color(0xFF4ADE80).copy(alpha = 0.2f) else Color.White.copy(alpha = 0.1f)
                     ) {
-                        // Glow effect
+                        Text(
+                            text = if (targetRolls > 0) "Active" else "Inactive",
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = if (targetRolls > 0) Color(0xFF4ADE80) else Color.White.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                // Main balance section
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Left side - Icon and Rolls
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Animated Roll icon - white bg with black icon
                         Box(
-                            modifier = Modifier
-                                .size(68.dp)
-                                .graphicsLayer {
-                                    scaleX = iconScale * 1.1f
-                                    scaleY = iconScale * 1.1f
-                                }
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.radialGradient(
-                                        colors = listOf(
-                                            accentColor.copy(alpha = iconGlow),
-                                            Color.Transparent
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.size(72.dp)
+                        ) {
+                            // Glow effect
+                            Box(
+                                modifier = Modifier
+                                    .size(68.dp)
+                                    .graphicsLayer {
+                                        scaleX = iconScale * 1.1f
+                                        scaleY = iconScale * 1.1f
+                                    }
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.radialGradient(
+                                            colors = listOf(
+                                                Color.White.copy(alpha = iconGlow),
+                                                Color.Transparent
+                                            )
                                         )
                                     )
+                            )
+                            
+                            // Main icon - white container with black icon
+                            Box(
+                                modifier = Modifier
+                                    .size(60.dp)
+                                    .graphicsLayer {
+                                        scaleX = iconScale
+                                        scaleY = iconScale
+                                    }
+                                    .background(
+                                        color = Color.White,
+                                        shape = RoundedCornerShape(18.dp)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Token,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(32.dp),
+                                    tint = Color.Black
                                 )
-                        )
+                            }
+                        }
                         
-                        // Main icon
-                        Box(
-                            modifier = Modifier
-                                .size(60.dp)
-                                .graphicsLayer {
-                                    scaleX = iconScale
-                                    scaleY = iconScale
-                                }
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.linearGradient(
-                                        colors = listOf(accentColor, Color(0xFF8B5CF6))
-                                    )
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Default.Token,
-                                contentDescription = null,
-                                modifier = Modifier.size(32.dp),
-                                tint = Color.White
+                        Spacer(modifier = Modifier.width(16.dp))
+                        
+                        Column {
+                            // Animated Rolls count
+                            Text(
+                                text = "${animatedRolls.toInt()}",
+                                style = MaterialTheme.typography.headlineLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "Rolls",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White.copy(alpha = 0.7f)
                             )
                         }
                     }
                     
-                    Spacer(modifier = Modifier.width(16.dp))
-                    
-                    Column {
-                        // Animated Rolls count
+                    // Right side - MAS Value
+                    Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = "${animatedRolls.toInt()}",
-                            style = MaterialTheme.typography.headlineLarge,
+                            text = "${String.format("%.0f", animatedMasValue)}",
+                            style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
-                            color = textColor
+                            color = Color(0xFF667eea)
                         )
                         Text(
-                            text = "Rolls",
+                            text = "MAS",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = secondaryTextColor
+                            color = Color.White.copy(alpha = 0.7f)
                         )
                     }
                 }
                 
-                // Right side - MAS Value
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "${String.format("%.0f", animatedMasValue)}",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = accentColor
-                    )
-                    Text(
-                        text = "MAS",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = secondaryTextColor
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Details row in a subtle container
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.Black.copy(alpha = 0.03f)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    StakingStatItem(
-                        label = "Final",
-                        value = "${stakingInfo?.finalRolls ?: 0}",
-                        textColor = textColor,
-                        secondaryTextColor = secondaryTextColor
-                    )
-                    
-                    // Divider
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(40.dp)
-                            .background(secondaryTextColor.copy(alpha = 0.2f))
-                    )
-                    
-                    StakingStatItem(
-                        label = "Pending",
-                        value = "${stakingInfo?.candidateRolls ?: 0}",
-                        textColor = textColor,
-                        secondaryTextColor = secondaryTextColor
-                    )
-                    
-                    // Divider
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(40.dp)
-                            .background(secondaryTextColor.copy(alpha = 0.2f))
-                    )
-                    
-                    StakingStatItem(
-                        label = "Available",
-                        value = String.format("%.1f", stakingInfo?.balance?.toDoubleOrNull() ?: 0.0),
-                        textColor = textColor,
-                        secondaryTextColor = secondaryTextColor
-                    )
-                }
-            }
-            
-            // Deferred credits if any
-            val deferredCredits = stakingInfo?.deferredCredits?.toDoubleOrNull() ?: 0.0
-            if (deferredCredits > 0) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                // Details row in a subtle container
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFFFF9800).copy(alpha = 0.1f)
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color.White.copy(alpha = 0.1f)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        Icon(
-                            Icons.Default.Schedule,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = Color(0xFFFF9800)
+                        StakingStatItem(
+                            label = "Final",
+                            value = "${stakingInfo?.finalRolls ?: 0}",
+                            textColor = Color.White,
+                            secondaryTextColor = Color.White.copy(alpha = 0.6f)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Pending: ${String.format("%.2f", deferredCredits)} MAS",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFFFF9800)
+                        
+                        // Divider
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .height(40.dp)
+                                .background(Color.White.copy(alpha = 0.2f))
+                        )
+                        
+                        StakingStatItem(
+                            label = "Pending",
+                            value = "${stakingInfo?.candidateRolls ?: 0}",
+                            textColor = Color.White,
+                            secondaryTextColor = Color.White.copy(alpha = 0.6f)
+                        )
+                        
+                        // Divider
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .height(40.dp)
+                                .background(Color.White.copy(alpha = 0.2f))
+                        )
+                        
+                        StakingStatItem(
+                            label = "Available",
+                            value = String.format("%.1f", stakingInfo?.balance?.toDoubleOrNull() ?: 0.0),
+                            textColor = Color.White,
+                            secondaryTextColor = Color.White.copy(alpha = 0.6f)
                         )
                     }
                 }
-            }
-            
-            Spacer(modifier = Modifier.height(20.dp))
-            
-            // Action Buttons - Modern style
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Buy Rolls Button
-                Button(
-                    onClick = onBuyClick,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isDarkTheme) Color.White else Color.Black,
-                        contentColor = if (isDarkTheme) Color.Black else Color.White,
-                        disabledContainerColor = if (isDarkTheme) Color.White.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.3f),
-                        disabledContentColor = if (isDarkTheme) Color.Black.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.5f)
-                    ),
-                    enabled = canBuy
-                ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Buy Rolls", fontWeight = FontWeight.SemiBold)
+                
+                // Deferred credits if any
+                val deferredCredits = stakingInfo?.deferredCredits?.toDoubleOrNull() ?: 0.0
+                if (deferredCredits > 0) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFFF9800).copy(alpha = 0.15f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Schedule,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = Color(0xFFFF9800)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Pending: ${String.format("%.2f", deferredCredits)} MAS",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFFF9800)
+                            )
+                        }
+                    }
                 }
                 
-                // Sell Rolls Button
-                OutlinedButton(
-                    onClick = onSellClick,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = textColor,
-                        disabledContentColor = textColor.copy(alpha = 0.4f)
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.5.dp,
-                        if (canSell) textColor.copy(alpha = 0.3f) else textColor.copy(alpha = 0.1f)
-                    ),
-                    enabled = canSell
+                Spacer(modifier = Modifier.height(20.dp))
+                
+                // Action Buttons - Modern style with gradient
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Icon(
-                        Icons.Default.Remove,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Sell Rolls", fontWeight = FontWeight.SemiBold)
+                    // Buy Rolls Button - Gradient style
+                    Button(
+                        onClick = onBuyClick,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF667eea),
+                            contentColor = Color.White,
+                            disabledContainerColor = Color(0xFF667eea).copy(alpha = 0.4f),
+                            disabledContentColor = Color.White.copy(alpha = 0.5f)
+                        ),
+                        enabled = canBuy
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Buy Rolls", fontWeight = FontWeight.SemiBold)
+                    }
+                    
+                    // Sell Rolls Button - Outlined style
+                    OutlinedButton(
+                        onClick = onSellClick,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color.White,
+                            disabledContentColor = Color.White.copy(alpha = 0.4f)
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.5.dp,
+                            if (canSell) Color.White.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.1f)
+                        ),
+                        enabled = canSell
+                    ) {
+                        Icon(
+                            Icons.Default.Remove,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Sell Rolls", fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         }

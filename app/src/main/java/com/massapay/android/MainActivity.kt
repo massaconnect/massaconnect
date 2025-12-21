@@ -330,7 +330,8 @@ class MainActivity : FragmentActivity() {
                     
                     composable("accounts") {
                         com.massapay.android.ui.accounts.AccountsScreen(
-                            onClose = { navController.popBackStack() }
+                            onClose = { navController.popBackStack() },
+                            isDarkTheme = darkTheme
                         )
                     }
                     

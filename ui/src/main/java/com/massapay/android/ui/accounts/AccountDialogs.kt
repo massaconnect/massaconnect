@@ -120,7 +120,7 @@ fun CreateAccountDialog(
                 Text("Cancel")
             }
         },
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(24.dp)
     )
 }
 
@@ -214,7 +214,7 @@ fun EditAccountDialog(
                 Text("Cancel")
             }
         },
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(24.dp)
     )
 }
 
@@ -294,7 +294,7 @@ fun DeleteAccountDialog(
                 Text("Cancel")
             }
         },
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(24.dp)
     )
 }
 

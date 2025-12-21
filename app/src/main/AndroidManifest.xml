@@ -39,6 +39,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.MassaPay"
+            android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
