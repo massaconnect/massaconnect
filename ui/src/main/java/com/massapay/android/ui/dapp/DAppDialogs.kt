@@ -162,7 +162,7 @@ fun BearbyProtocolWarningDialog(
                         }
                         
                         Text(
-                            text = "MassaPay connects to DApps using the Bearby wallet protocol. This ensures compatibility with all Massa ecosystem applications.",
+                            text = "MassaConnect connects to DApps using the Bearby wallet protocol. This ensures compatibility with all Massa ecosystem applications.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = textPrimary,
                             lineHeight = 22.sp

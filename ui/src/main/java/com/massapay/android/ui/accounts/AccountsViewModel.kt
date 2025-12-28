@@ -138,12 +138,52 @@ class AccountsViewModel @Inject constructor(
     }
     
     // UI State Management
+    fun showAddOptions() {
+        _uiState.value = _uiState.value.copy(showAddOptions = true)
+    }
+    
+    fun hideAddOptions() {
+        _uiState.value = _uiState.value.copy(showAddOptions = false)
+    }
+    
     fun showCreateDialog() {
         _uiState.value = _uiState.value.copy(showCreateDialog = true)
     }
     
     fun hideCreateDialog() {
-        _uiState.value = _uiState.value.copy(showCreateDialog = false)
+        _uiState.value = _uiState.value.copy(showCreateDialog = false, error = null)
+    }
+    
+    fun showImportDialog() {
+        _uiState.value = _uiState.value.copy(showImportDialog = true, error = null)
+    }
+    
+    fun hideImportDialog() {
+        _uiState.value = _uiState.value.copy(showImportDialog = false, error = null)
+    }
+    
+    fun importAccountFromS1(name: String, s1PrivateKey: String, color: AccountColor? = null) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isImporting = true, error = null)
+            
+            val result = accountManager.importAccountFromS1(name, s1PrivateKey, color)
+            
+            result.fold(
+                onSuccess = { account ->
+                    _uiState.value = _uiState.value.copy(
+                        isImporting = false,
+                        showImportDialog = false,
+                        successMessage = "Account '${account.name}' imported successfully"
+                    )
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        isImporting = false,
+                        error = error.message ?: "Failed to import account"
+                    )
+                }
+            )
+        }
     }
     
     fun showEditDialog(account: Account) {
@@ -190,9 +230,12 @@ class AccountsViewModel @Inject constructor(
 data class AccountsUiState(
     val isLoading: Boolean = false,
     val isCreating: Boolean = false,
+    val isImporting: Boolean = false,
     val isSwitching: Boolean = false,
     val accountSwitched: Boolean = false,
+    val showAddOptions: Boolean = false,
     val showCreateDialog: Boolean = false,
+    val showImportDialog: Boolean = false,
     val showEditDialog: Boolean = false,
     val showDeleteDialog: Boolean = false,
     val selectedAccount: Account? = null,

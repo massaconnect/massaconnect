@@ -132,6 +132,14 @@ class PortfolioViewModel @Inject constructor(
             decimals = 9,
             color = Color(0xFF9C27B0),
             defaultPrice = BigDecimal("0.0001")
+        ),
+        TokenInfo(
+            symbol = "MC",
+            name = "MassaConnect",
+            contractAddress = "AS12XfRvGn4A8QZBmLSHsD2EBqpBVEsdF1CcbvJRTpqtXMYGhH6FH",
+            decimals = 18,
+            color = Color(0xFFFFD700), // Gold color for official token
+            defaultPrice = BigDecimal("0.00004") // Will get real price from DEX
         )
     )
 
@@ -255,6 +263,12 @@ class PortfolioViewModel @Inject constructor(
             // For DUSA, we could query the DEX for DUSA/USDC price
             // For now, use default (DEX price query would require significant additional code)
             
+            // For MC token, calculate price based on MC-MAS pool
+            fetchMCPrice()?.let { mcPrice ->
+                realPrices["MC"] = mcPrice
+                android.util.Log.d("PortfolioVM", "Real MC price: $mcPrice")
+            }
+            
         } catch (e: Exception) {
             android.util.Log.e("PortfolioVM", "Error fetching real prices: ${e.message}")
             // Prices will fall back to defaults
@@ -284,6 +298,79 @@ class PortfolioViewModel @Inject constructor(
             null
         } catch (e: Exception) {
             android.util.Log.e("PortfolioVM", "Error fetching ETH price: ${e.message}")
+            null
+        }
+    }
+    
+    /**
+     * Fetch MC token price from DUSA DEX
+     * MC price = (MAS in pool / MC in pool) * MAS price
+     */
+    private suspend fun fetchMCPrice(): BigDecimal? = withContext(Dispatchers.IO) {
+        try {
+            val masPrice = realPrices["MAS"] ?: return@withContext null
+            
+            // MC-WMAS pool address
+            val poolAddress = "AS1tnZc9iWKrE77on7sVqZ5FqaHw81jVXjLChVT8vnmyxBKRRE93"
+            
+            // Query pool reserves using getReserves function
+            val requestBody = JSONObject().apply {
+                put("jsonrpc", "2.0")
+                put("id", 1)
+                put("method", "execute_read_only_call")
+                put("params", JSONArray().apply {
+                    put(JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("max_gas", 2100000)
+                            put("target_address", poolAddress)
+                            put("target_function", "getReserves")
+                            put("parameter", JSONArray()) // No parameters needed
+                        })
+                    })
+                })
+            }.toString()
+            
+            val request = Request.Builder()
+                .url("https://mainnet.massa.net/api/v2")
+                .post(requestBody.toRequestBody("application/json".toMediaTypeOrNull()))
+                .build()
+            
+            httpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: return@withContext null
+                    val json = JSONObject(body)
+                    val result = json.optJSONArray("result")?.optJSONObject(0) ?: return@withContext null
+                    val resultData = result.optJSONObject("result")?.optJSONArray("Ok") ?: return@withContext null
+                    
+                    // Parse reserves - typically returns two U256 values (reserveX, reserveY)
+                    // Each U256 is 32 bytes
+                    if (resultData.length() >= 64) {
+                        val bytes = ByteArray(resultData.length()) { resultData.getInt(it).toByte() }
+                        
+                        // First 32 bytes = reserveX (WMAS), next 32 bytes = reserveY (MC)
+                        val reserveXBytes = bytes.sliceArray(0 until 32)
+                        val reserveYBytes = bytes.sliceArray(32 until 64)
+                        
+                        // Convert little-endian bytes to BigInteger
+                        val reserveX = BigInteger(1, reserveXBytes.reversedArray())
+                        val reserveY = BigInteger(1, reserveYBytes.reversedArray())
+                        
+                        if (reserveY > BigInteger.ZERO && reserveX > BigInteger.ZERO) {
+                            // WMAS has 9 decimals, MC has 18 decimals
+                            val wmasReserve = BigDecimal(reserveX).divide(BigDecimal("1000000000"), 18, RoundingMode.HALF_UP)
+                            val mcReserve = BigDecimal(reserveY).divide(BigDecimal("1000000000000000000"), 18, RoundingMode.HALF_UP)
+                            
+                            // MC price = (WMAS reserve / MC reserve) * MAS price
+                            val mcPrice = wmasReserve.divide(mcReserve, 18, RoundingMode.HALF_UP).multiply(masPrice)
+                            android.util.Log.d("PortfolioVM", "MC Pool - WMAS: $wmasReserve, MC: $mcReserve, MC Price: $mcPrice")
+                            return@withContext mcPrice
+                        }
+                    }
+                }
+            }
+            null
+        } catch (e: Exception) {
+            android.util.Log.e("PortfolioVM", "Error fetching MC price: ${e.message}")
             null
         }
     }

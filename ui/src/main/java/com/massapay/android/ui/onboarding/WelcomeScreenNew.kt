@@ -119,7 +119,7 @@ fun WelcomeScreenNew(
                 )
             ) {
                 Text(
-                    text = "MASSA PAY",
+                    text = "MASSACONNECT",
                     fontSize = 32.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,

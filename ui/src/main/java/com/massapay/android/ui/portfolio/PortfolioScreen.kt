@@ -1,7 +1,9 @@
 package com.massapay.android.ui.portfolio
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,11 +21,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.massapay.android.ui.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -410,12 +414,39 @@ private fun TokenItem(
     iconContainerColor: Color,
     iconTintColor: Color
 ) {
+    // Special styling for MC (MassaConnect) token - our official token
+    val isMCToken = token.symbol == "MC"
+    val goldColor = Color(0xFFFFD700)
+    val goldGradient = Brush.linearGradient(
+        colors = listOf(
+            Color(0xFFFFD700),
+            Color(0xFFFFA500),
+            Color(0xFFFFD700)
+        )
+    )
+    
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = cardColor),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (isMCToken) {
+                    Modifier.border(
+                        width = 2.dp,
+                        brush = goldGradient,
+                        shape = RoundedCornerShape(20.dp)
+                    )
+                } else {
+                    Modifier
+                }
+            ),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isMCToken) {
+                if (isDarkTheme) Color(0xFF1A1A2E) else cardColor
+            } else cardColor
+        ),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isDarkTheme) 0.dp else 4.dp
+            defaultElevation = if (isMCToken) 8.dp else if (isDarkTheme) 0.dp else 4.dp
         )
     ) {
         Row(
@@ -424,20 +455,45 @@ private fun TokenItem(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Token icon with styled container
-            Surface(
-                modifier = Modifier.size(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                color = token.color.copy(alpha = 0.15f)
-            ) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                    Text(
-                        token.symbol.first().toString(),
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold
+            // Token icon with styled container - Special for MC token
+            if (isMCToken) {
+                // MC Token gets the MassaConnect logo with gold border
+                Surface(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .border(
+                            width = 2.dp,
+                            brush = goldGradient,
+                            shape = RoundedCornerShape(14.dp)
                         ),
-                        color = token.color
-                    )
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color.Black
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Image(
+                            painter = painterResource(id = R.drawable.massapay_logo),
+                            contentDescription = "MassaConnect",
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                        )
+                    }
+                }
+            } else {
+                Surface(
+                    modifier = Modifier.size(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = token.color.copy(alpha = 0.15f)
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Text(
+                            token.symbol.first().toString(),
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = token.color
+                        )
+                    }
                 }
             }
             
@@ -445,13 +501,35 @@ private fun TokenItem(
             
             // Token info
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    token.symbol,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = textPrimary
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        token.symbol,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = if (isMCToken) goldColor else textPrimary
+                    )
+                    // Official badge for MC token
+                    if (isMCToken) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = goldColor.copy(alpha = 0.2f)
+                        ) {
+                            Text(
+                                "★ OFFICIAL",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 8.sp
+                                ),
+                                color = goldColor,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
                 Text(
                     token.name,
                     style = MaterialTheme.typography.bodySmall,

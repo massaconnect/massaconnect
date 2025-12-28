@@ -93,8 +93,16 @@ data class SwapToken(
             color = Color(0xFF9C27B0)
         )
         
+        val MC = SwapToken(
+            symbol = "MC",
+            name = "MassaConnect",
+            contractAddress = "AS12XfRvGn4A8QZBmLSHsD2EBqpBVEsdF1CcbvJRTpqtXMYGhH6FH",
+            decimals = 18,
+            color = Color(0xFF2196F3) // Blue color for MassaConnect
+        )
+        
         // All available tokens for swapping
-        val ALL = listOf(MAS, WMAS, USDC, WETH, DAI, DUSA, PUR)
+        val ALL = listOf(MAS, WMAS, USDC, WETH, DAI, DUSA, PUR, MC)
     }
 }
 
@@ -117,7 +125,7 @@ data class SwapState(
     val toBalanceRaw: BigDecimal = BigDecimal.ZERO,    // Raw balance for calculations
     val exchangeRate: String = "0",
     val priceImpact: Float = 0f,
-    val slippage: Float = 0.5f,
+    val slippage: Float = 3.0f,  // Default 3% slippage for DUSA DEX (low liquidity)
     val showSettings: Boolean = false,
     val isLoading: Boolean = false,
     val isCalculatingQuote: Boolean = false,  // Loading state for quote calculation
@@ -1179,12 +1187,34 @@ class SwapViewModel @Inject constructor(
         if (!state.canSwap) return
         
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null, swapStatus = "Preparing swap...") }
+            _uiState.update { it.copy(isLoading = true, error = null, swapStatus = "Refreshing quote...") }
             
             try {
                 val fromAmount = state.fromAmount.toBigDecimal()
-                val minAmountOut = state.toAmount.toBigDecimal()
+                
+                // Get a fresh quote just before executing to ensure we have the latest price
+                // This prevents failures due to stale quotes when price has moved
+                val freshQuote = try {
+                    getSwapQuote(
+                        fromToken = state.fromToken,
+                        toToken = state.toToken,
+                        amountIn = fromAmount
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.w("SwapVM", "Failed to get fresh quote, using cached: ${e.message}")
+                    null
+                }
+                
+                // Use fresh quote if available, otherwise fall back to displayed amount
+                val expectedAmountOut = freshQuote?.amountOut ?: state.toAmount.toBigDecimal()
+                
+                // Apply slippage tolerance
+                val minAmountOut = expectedAmountOut
                     .multiply(BigDecimal.ONE.subtract(BigDecimal.valueOf(state.slippage / 100.0)))
+                
+                android.util.Log.d("SwapVM", "Fresh quote amountOut: ${freshQuote?.amountOut}, displayed: ${state.toAmount}, minAmountOut: $minAmountOut, slippage: ${state.slippage}%")
+                
+                _uiState.update { it.copy(swapStatus = "Preparing swap...") }
                 
                 // Get credentials
                 val activeAccount = accountManager.activeAccount.value
@@ -1244,16 +1274,19 @@ class SwapViewModel @Inject constructor(
                             
                             android.util.Log.d("SwapVM", "Operation confirmed! isFinal=$isFinal, opExecStatus=$execStatus")
                             
-                            if (isFinal && execStatus == true) {
+                            if (execStatus == true) {
                                 // SUCCESS - transaction executed successfully
                                 _uiState.update { it.copy(
                                     isConfirmingTx = false,
                                     swapSuccess = true,
                                     swapStatus = ""
                                 ) }
-                            } else if (isFinal && execStatus == false) {
-                                // FAILED - transaction was included but execution failed
-                                val errorMsg = operation.opExecError ?: "Transaction execution failed"
+                                // Refresh both balances after successful swap
+                                loadBalances()
+                            } else if (execStatus == false) {
+                                // FAILED - transaction was included but execution failed (slippage, liquidity, etc)
+                                val errorMsg = operation.opExecError ?: "Swap failed - price changed too much (try increasing slippage)"
+                                android.util.Log.e("SwapVM", "Swap execution failed: $errorMsg")
                                 _uiState.update { it.copy(
                                     isConfirmingTx = false,
                                     error = errorMsg,
@@ -1266,13 +1299,17 @@ class SwapViewModel @Inject constructor(
                                     swapSuccess = true,
                                     swapStatus = ""
                                 ) }
+                                // Refresh both balances after successful swap
+                                loadBalances()
                             } else {
-                                // Still not final after timeout
+                                // Still not final after timeout, but no exec status yet
                                 _uiState.update { it.copy(
                                     isConfirmingTx = false,
                                     swapSuccess = true, // Show success since tx was sent
                                     swapStatus = ""
                                 ) }
+                                // Refresh both balances after successful swap
+                                loadBalances()
                             }
                         } else {
                             // No operation data returned (timeout) - show success since tx was sent
@@ -1282,6 +1319,8 @@ class SwapViewModel @Inject constructor(
                                 swapSuccess = true,
                                 swapStatus = ""
                             ) }
+                            // Refresh both balances after successful swap
+                            loadBalances()
                         }
                     }
                     is Result.Error -> {
@@ -1292,6 +1331,8 @@ class SwapViewModel @Inject constructor(
                             swapSuccess = true,
                             swapStatus = ""
                         ) }
+                        // Refresh both balances after successful swap
+                        loadBalances()
                     }
                     is Result.Loading -> {
                         // Shouldn't happen
@@ -1498,6 +1539,26 @@ class SwapViewModel @Inject constructor(
      * - u64(deadline)
      * - u64(storageCost) - 0.1 MAS = 100_000_000 nanoMAS
      */
+    
+    /**
+     * Helper function to convert a BigInteger to 32-byte little-endian U256
+     */
+    private fun bigIntToU256LittleEndian(value: BigInteger): ByteArray {
+        val bytesBigEndian = value.toByteArray()
+        // Remove leading sign byte if present (BigInteger adds 0x00 for positive numbers with high bit set)
+        val bytesUnsigned = if (bytesBigEndian.isNotEmpty() && bytesBigEndian[0] == 0.toByte() && bytesBigEndian.size > 1) {
+            bytesBigEndian.copyOfRange(1, bytesBigEndian.size)
+        } else {
+            bytesBigEndian
+        }
+        // Convert to 32-byte little-endian
+        val u256 = ByteArray(32) { 0 }
+        for (i in bytesUnsigned.indices) {
+            u256[bytesUnsigned.size - 1 - i] = bytesUnsigned[i]
+        }
+        return u256
+    }
+    
     private fun serializeSwapExactMASForTokensParams(
         amountOutMin: String,
         binSteps: List<Long>,
@@ -1510,15 +1571,9 @@ class SwapViewModel @Inject constructor(
         val SWAP_STORAGE_COST = 100_000_000L // 0.1 MAS
         
         // 1. amountOutMin as u256 (32 bytes, little-endian)
-        val amountBytes = BigDecimal(amountOutMin).toBigInteger().toByteArray()
-        val u256 = ByteArray(32)
-        for (i in amountBytes.indices.reversed()) {
-            val destIndex = amountBytes.size - 1 - i
-            if (destIndex < 32) {
-                u256[destIndex] = amountBytes[i]
-            }
-        }
-        buffer.write(u256)
+        val amountBigInt = BigDecimal(amountOutMin).toBigInteger()
+        buffer.write(bigIntToU256LittleEndian(amountBigInt))
+        android.util.Log.d("SwapVM", "amountOutMin: $amountOutMin -> bigInt: $amountBigInt")
         
         // 2. binSteps array (u64[]) - BYTE length prefix (u32) + u64 elements
         // Massa serialization uses BYTE LENGTH, not element count!
@@ -1586,16 +1641,7 @@ class SwapViewModel @Inject constructor(
         val buffer = java.io.ByteArrayOutputStream()
         
         // amountOutMin as u256 (32 bytes, little-endian)
-        val amountBytes = BigDecimal(amountOutMin).toBigInteger().toByteArray()
-        val u256 = ByteArray(32)
-        // Copy amount bytes to u256 in little-endian format
-        for (i in amountBytes.indices.reversed()) {
-            val destIndex = amountBytes.size - 1 - i
-            if (destIndex < 32) {
-                u256[destIndex] = amountBytes[i]
-            }
-        }
-        buffer.write(u256)
+        buffer.write(bigIntToU256LittleEndian(BigDecimal(amountOutMin).toBigInteger()))
         
         // path length as u32 (4 bytes, little-endian)
         val pathLenBytes = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(path.size).array()
@@ -1652,11 +1698,14 @@ class SwapViewModel @Inject constructor(
             listOf(20L) // Default bin step for WMAS-USDC pool
         }
         
-        // Use isLegacy from quote, or default to [false] for V2 pools
+        // Use isLegacy from quote - this is CRITICAL!
+        // V2.1 pools (isLegacy=false) use different bin math than V2.0 pools (isLegacy=true)
+        // Using wrong value causes TreeMath__ErrorDepthSearch error
         val isLegacy = if (quote.isLegacy.isNotEmpty()) {
             quote.isLegacy
         } else {
-            List(binSteps.size) { false } // Default to V2 (not legacy)
+            // Default to false for V2.1 pools (most common on DUSA mainnet)
+            List(binSteps.size) { false }
         }
         
         android.util.Log.d("SwapVM", "Swap params - tokenPath: $tokenPath, binSteps: $binSteps, isLegacy: $isLegacy")
@@ -1731,10 +1780,13 @@ class SwapViewModel @Inject constructor(
             listOf(20L)
         }
         
-        // Use isLegacy from quote, or default to [false] for V2 pools
-        val isLegacy = if (quote?.isLegacy?.isNotEmpty() == true) {
+        // Use isLegacy from quote - CRITICAL for correct pool type
+        val isLegacy = if (isUnwrap) {
+            emptyList()
+        } else if (quote?.isLegacy?.isNotEmpty() == true) {
             quote.isLegacy
         } else {
+            // Default to false for V2.1 pools
             List(binSteps.size) { false }
         }
         
@@ -1746,22 +1798,10 @@ class SwapViewModel @Inject constructor(
         val SWAP_STORAGE_COST = 100_000_000L // 0.1 MAS in nanoMAS
         
         // 1. amountIn as u256 (32 bytes, little-endian)
-        val amountInBytes = BigDecimal(amountIn).toBigInteger().toByteArray()
-        val u256In = ByteArray(32)
-        for (i in amountInBytes.indices.reversed()) {
-            val destIndex = amountInBytes.size - 1 - i
-            if (destIndex < 32) u256In[destIndex] = amountInBytes[i]
-        }
-        buffer.write(u256In)
+        buffer.write(bigIntToU256LittleEndian(BigDecimal(amountIn).toBigInteger()))
         
         // 2. amountOutMin as u256
-        val amountOutBytes = BigDecimal(minAmountOut).toBigInteger().toByteArray()
-        val u256Out = ByteArray(32)
-        for (i in amountOutBytes.indices.reversed()) {
-            val destIndex = amountOutBytes.size - 1 - i
-            if (destIndex < 32) u256Out[destIndex] = amountOutBytes[i]
-        }
-        buffer.write(u256Out)
+        buffer.write(bigIntToU256LittleEndian(BigDecimal(minAmountOut).toBigInteger()))
         
         // 3. binSteps array (u64[]) - BYTE length prefix
         val binStepsByteLen = binSteps.size * 8
@@ -1859,10 +1899,11 @@ class SwapViewModel @Inject constructor(
             listOf(20L, 20L) // 2 hops for token-to-token
         }
         
-        // Use isLegacy from quote, or default to [false, false] for V2 pools
+        // Use isLegacy from quote - CRITICAL for correct pool type
         val isLegacy = if (quote.isLegacy.isNotEmpty()) {
             quote.isLegacy
         } else {
+            // Default to false for V2.1 pools
             List(binSteps.size) { false }
         }
         
@@ -1873,22 +1914,10 @@ class SwapViewModel @Inject constructor(
         val buffer = java.io.ByteArrayOutputStream()
         
         // 1. amountIn as u256
-        val amountInBytes = BigDecimal(amountIn).toBigInteger().toByteArray()
-        val u256In = ByteArray(32)
-        for (i in amountInBytes.indices.reversed()) {
-            val destIndex = amountInBytes.size - 1 - i
-            if (destIndex < 32) u256In[destIndex] = amountInBytes[i]
-        }
-        buffer.write(u256In)
+        buffer.write(bigIntToU256LittleEndian(BigDecimal(amountIn).toBigInteger()))
         
         // 2. amountOutMin as u256
-        val amountOutBytes = BigDecimal(minAmountOut).toBigInteger().toByteArray()
-        val u256Out = ByteArray(32)
-        for (i in amountOutBytes.indices.reversed()) {
-            val destIndex = amountOutBytes.size - 1 - i
-            if (destIndex < 32) u256Out[destIndex] = amountOutBytes[i]
-        }
-        buffer.write(u256Out)
+        buffer.write(bigIntToU256LittleEndian(BigDecimal(minAmountOut).toBigInteger()))
         
         // 3. binSteps array (u64[]) - BYTE length prefix
         val binStepsByteLenT = binSteps.size * 8

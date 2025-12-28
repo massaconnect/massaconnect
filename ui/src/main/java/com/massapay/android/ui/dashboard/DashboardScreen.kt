@@ -26,12 +26,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.massapay.android.core.model.Transaction
 import com.massapay.android.core.model.TransactionStatus
 import com.massapay.android.ui.components.LucideIcons
@@ -94,6 +97,20 @@ fun DashboardScreen(
     val clipboardManager = LocalClipboardManager.current
     var showCopiedToast by remember { mutableStateOf(false) }
     
+    // Auto-refresh when screen becomes visible (returning from Swap, Portfolio, etc.)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshData()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+    
     // Show copied toast
     LaunchedEffect(showCopiedToast) {
         if (showCopiedToast) {
@@ -108,7 +125,7 @@ fun DashboardScreen(
                 title = { 
                     Column {
                         Text(
-                            "Massa Pay",
+                            "MassaConnect",
                             style = MaterialTheme.typography.titleLarge.copy(
                                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                             ),

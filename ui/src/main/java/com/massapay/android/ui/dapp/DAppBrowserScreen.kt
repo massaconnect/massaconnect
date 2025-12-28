@@ -64,7 +64,7 @@ private fun handleMassaStationRequest(
         // Must return: name="Massa Wallet", author="Massa Labs", status="Up"
         path.contains("/plugin-manager") -> {
             Log.d("MassaPayWebView", "Returning plugin-manager response")
-            """{"result":[{"name":"Massa Wallet","author":"Massa Labs","description":"MassaPay Wallet","home":"/","icon":"","status":"Up","version":"1.0.0"}]}"""
+            """{"result":[{"name":"Massa Wallet","author":"Massa Labs","description":"MassaConnect Wallet","home":"/","icon":"","status":"Up","version":"1.0.0"}]}"""
         }
         
         // Wallet API accounts endpoint - multiple patterns
@@ -1199,7 +1199,7 @@ private fun DAppWebView(
                             view?.evaluateJavascript("""
                                 (function() {
                                     console.log('[MassaPay] Intercepted wallet redirect to: """ + url + """');
-                                    console.log('[MassaPay] Triggering MassaPay wallet connection...');
+                                    console.log('[MassaPay] Triggering MassaConnect Wallet connection...');
                                     
                                     // Always trigger the connection flow to show approval dialog
                                     // This ensures user consent before connecting to DApp

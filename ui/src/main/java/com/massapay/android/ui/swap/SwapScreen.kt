@@ -26,7 +26,11 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.Image
+import com.massapay.android.ui.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -189,7 +193,7 @@ fun SwapScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            listOf("0.1%", "0.5%", "1%", "3%").forEach { slippage ->
+                            listOf("0.5%", "1%", "3%", "5%").forEach { slippage ->
                                 val isSelected = uiState.slippage == slippage.dropLast(1).toFloat()
                                 Surface(
                                     onClick = { viewModel.setSlippage(slippage.dropLast(1).toFloat()) },
@@ -706,19 +710,7 @@ private fun SwapTokenCard(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         // Token icon
-                        Surface(
-                            shape = CircleShape,
-                            color = token.color.copy(alpha = 0.2f),
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                Text(
-                                    token.symbol.first().toString(),
-                                    fontWeight = FontWeight.Bold,
-                                    color = token.color
-                                )
-                            }
-                        }
+                        TokenIcon(token = token, size = 32.dp)
                         Text(
                             token.symbol,
                             fontWeight = FontWeight.SemiBold,
@@ -868,20 +860,7 @@ private fun TokenSelectionDialog(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 // Token icon
-                                Surface(
-                                    shape = CircleShape,
-                                    color = token.color.copy(alpha = 0.2f),
-                                    modifier = Modifier.size(40.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                        Text(
-                                            token.symbol.first().toString(),
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 18.sp,
-                                            color = token.color
-                                        )
-                                    }
-                                }
+                                TokenIcon(token = token, size = 40.dp, fontSize = 18.sp)
 
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
@@ -1174,19 +1153,7 @@ private fun SwapConfirmationDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = data.fromToken.color.copy(alpha = 0.2f),
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                Text(
-                                    data.fromToken.symbol.first().toString(),
-                                    fontWeight = FontWeight.Bold,
-                                    color = data.fromToken.color
-                                )
-                            }
-                        }
+                        TokenIcon(token = data.fromToken, size = 40.dp)
                         Column {
                             Text(
                                 "${data.fromAmount} ${data.fromToken.symbol}",
@@ -1214,19 +1181,7 @@ private fun SwapConfirmationDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = data.toToken.color.copy(alpha = 0.2f),
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                Text(
-                                    data.toToken.symbol.first().toString(),
-                                    fontWeight = FontWeight.Bold,
-                                    color = data.toToken.color
-                                )
-                            }
-                        }
+                        TokenIcon(token = data.toToken, size = 40.dp)
                         Column {
                             Text(
                                 "${data.toAmount} ${data.toToken.symbol}",
@@ -1362,5 +1317,40 @@ private fun SwapDetailRow(
             fontWeight = FontWeight.Medium,
             color = textPrimary
         )
+    }
+}
+
+@Composable
+private fun TokenIcon(
+    token: SwapToken,
+    size: androidx.compose.ui.unit.Dp,
+    fontSize: androidx.compose.ui.unit.TextUnit = 14.sp
+) {
+    if (token.symbol == "MC") {
+        // Special icon for MassaConnect token
+        Image(
+            painter = painterResource(id = R.drawable.massapay_logo),
+            contentDescription = "MassaConnect",
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape),
+            contentScale = ContentScale.Crop
+        )
+    } else {
+        // Default letter icon for other tokens
+        Surface(
+            shape = CircleShape,
+            color = token.color.copy(alpha = 0.2f),
+            modifier = Modifier.size(size)
+        ) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                Text(
+                    token.symbol.first().toString(),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = fontSize,
+                    color = token.color
+                )
+            }
+        }
     }
 }

@@ -154,7 +154,7 @@ fun AccountsScreen(
                 }
             } else if (accounts.isEmpty()) {
                 EmptyAccountsState(
-                    onCreateAccount = { viewModel.showCreateDialog() },
+                    onCreateAccount = { viewModel.showAddOptions() },
                     modifier = Modifier.align(Alignment.Center),
                     buttonBackground = buttonBackground,
                     buttonText = buttonText,
@@ -176,7 +176,7 @@ fun AccountsScreen(
                             totalBalance = totalBalance,
                             accountCount = accounts.size,
                             isDarkTheme = isDarkTheme,
-                            onAddAccount = { viewModel.showCreateDialog() }
+                            onAddAccount = { viewModel.showAddOptions() }
                         )
                     }
                     
@@ -208,7 +208,7 @@ fun AccountsScreen(
                                 color = textPrimary
                             )
                             Surface(
-                                onClick = { viewModel.showCreateDialog() },
+                                onClick = { viewModel.showAddOptions() },
                                 color = iconContainerColor,
                                 shape = RoundedCornerShape(12.dp)
                             ) {
@@ -284,11 +284,32 @@ fun AccountsScreen(
     }
     
     // Dialogs
+    if (uiState.showAddOptions) {
+        AddAccountOptionsDialog(
+            onDismiss = { viewModel.hideAddOptions() },
+            onCreateNew = { viewModel.showCreateDialog() },
+            onImportS1 = { viewModel.showImportDialog() },
+            buttonBackground = buttonBackground,
+            buttonText = buttonText
+        )
+    }
+    
     if (uiState.showCreateDialog) {
         CreateAccountDialog(
             onDismiss = { viewModel.hideCreateDialog() },
             onCreate = { name, color -> viewModel.createAccount(name, color) },
             isCreating = uiState.isCreating,
+            buttonBackground = buttonBackground,
+            buttonText = buttonText
+        )
+    }
+    
+    if (uiState.showImportDialog) {
+        ImportS1AccountDialog(
+            onDismiss = { viewModel.hideImportDialog() },
+            onImport = { name, s1Key, color -> viewModel.importAccountFromS1(name, s1Key, color) },
+            isImporting = uiState.isImporting,
+            error = uiState.error,
             buttonBackground = buttonBackground,
             buttonText = buttonText
         )

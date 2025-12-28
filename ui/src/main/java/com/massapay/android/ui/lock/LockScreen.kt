@@ -35,6 +35,42 @@ import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import kotlinx.coroutines.delay
+
+/**
+ * Typewriter effect composable for animated text display
+ */
+@Composable
+fun TypewriterText(
+    text: String,
+    modifier: Modifier = Modifier,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    fontWeight: FontWeight,
+    color: Color,
+    letterSpacing: androidx.compose.ui.unit.TextUnit = 0.sp,
+    delayPerChar: Long = 80L,
+    initialDelay: Long = 500L
+) {
+    var displayedText by remember { mutableStateOf("") }
+    
+    LaunchedEffect(text) {
+        displayedText = ""
+        delay(initialDelay)
+        text.forEachIndexed { index, _ ->
+            displayedText = text.substring(0, index + 1)
+            delay(delayPerChar)
+        }
+    }
+    
+    Text(
+        text = displayedText,
+        fontSize = fontSize,
+        fontWeight = fontWeight,
+        color = color,
+        letterSpacing = letterSpacing,
+        modifier = modifier
+    )
+}
 
 @Composable
 fun LockScreen(
@@ -80,7 +116,7 @@ fun LockScreen(
     
     val promptInfo = remember {
         BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Unlock MassaPay")
+            .setTitle("Unlock MassaConnect")
             .setSubtitle("Use your biometric credential")
             .setNegativeButtonText("Use PIN Instead")
             .build()
@@ -127,6 +163,17 @@ fun LockScreen(
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
+        // Version text at top right
+        Text(
+            text = "v1.3.0",
+            fontSize = 12.sp,
+            color = textSecondary,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 16.dp, end = 24.dp)
+        )
+        
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -175,7 +222,7 @@ fun LockScreen(
                 ) {
                     androidx.compose.foundation.Image(
                         painter = painterResource(id = com.massapay.android.ui.R.drawable.massapay_logo),
-                        contentDescription = "MassaPay Logo",
+                        contentDescription = "MassaConnect Logo",
                         modifier = Modifier.size(if (showPinInput) 110.dp else 180.dp),
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop
                     )
@@ -183,14 +230,26 @@ fun LockScreen(
 
                 Spacer(modifier = Modifier.height(if (showPinInput) 16.dp else 32.dp))
 
-                // App name with gradient
-                Text(
-                    text = "MassaPay",
-                    fontSize = if (showPinInput) 28.sp else 38.sp,
-                    fontWeight = FontWeight.Black,
-                    color = textPrimary,
-                    letterSpacing = (-1).sp
-                )
+                // App name with typewriter effect (only when not in PIN mode)
+                if (!showPinInput) {
+                    TypewriterText(
+                        text = "MassaConnect",
+                        fontSize = 38.sp,
+                        fontWeight = FontWeight.Black,
+                        color = textPrimary,
+                        letterSpacing = (-1).sp,
+                        delayPerChar = 100L,
+                        initialDelay = 300L
+                    )
+                } else {
+                    Text(
+                        text = "MassaConnect",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Black,
+                        color = textPrimary,
+                        letterSpacing = (-1).sp
+                    )
+                }
                 
                 // Only show tagline when not in PIN mode
                 if (!showPinInput) {

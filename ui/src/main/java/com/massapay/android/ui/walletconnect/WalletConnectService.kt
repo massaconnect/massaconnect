@@ -335,7 +335,7 @@ class WalletConnectService @Inject constructor(
                         put("controller", JSONObject().apply {
                             put("publicKey", generateRandomHex(32))
                             put("metadata", JSONObject().apply {
-                                put("name", "MassaPay")
+                                put("name", "MassaConnect")
                                 put("description", "Massa Blockchain Mobile Wallet")
                                 put("url", "https://massapay.app")
                                 put("icons", JSONArray().put("https://massapay.app/icon.png"))

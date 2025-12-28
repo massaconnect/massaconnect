@@ -2,7 +2,7 @@ package com.massapay.android.ui.dapp
 
 /**
  * JavaScript Provider that gets injected into WebView
- * This makes MassaPay wallet detectable by DApps using @massalabs/wallet-provider
+ * This makes MassaConnect Wallet detectable by DApps using @massalabs/wallet-provider
  * 
  * Compatible with:
  * - Massa Station detection pattern
@@ -57,7 +57,7 @@ object MassaProviderScript {
                     return async () => {
                         console.log('[MassaPay-FALLBACK] getNodesStatus called via prototype fallback');
                         return [{
-                            node_id: 'MassaPay',
+                            node_id: 'MassaConnect',
                             node_ip: 'mainnet.massa.net',
                             version: '1.0.0',
                             chain_id: 77658377,
@@ -84,7 +84,7 @@ object MassaProviderScript {
             const globalGetNodesStatus = async () => {
                 console.log('[MassaPay] globalGetNodesStatus called');
                 return {
-                    node_id: 'MassaPay',
+                    node_id: 'MassaConnect',
                     node_ip: 'mainnet.massa.net',
                     version: '1.0.0',
                     chain_id: 77658377,
@@ -124,7 +124,7 @@ object MassaProviderScript {
                 constructor(address) {
                     this.address = address;
                     this.accountName = 'MassaPay Account';
-                    this.providerName = 'MassaPay';
+                    this.providerName = 'MassaConnect';
                     
                     // Use the global client
                     this.client = globalClient;
@@ -137,7 +137,7 @@ object MassaProviderScript {
                 async getNodesStatus() {
                     return {
                         result: [{
-                            node_id: 'MassaPay',
+                            node_id: 'MassaConnect',
                             node_ip: 'mainnet.massa.net',
                             version: '1.0.0',
                             chain_id: 77658377,
@@ -150,7 +150,7 @@ object MassaProviderScript {
                 // getNodeStatus (singular) - used by Provider interface
                 async getNodeStatus() {
                     return {
-                        node_id: 'MassaPay',
+                        node_id: 'MassaConnect',
                         node_ip: 'mainnet.massa.net',
                         version: '1.0.0',
                         chain_id: 77658377,
@@ -241,7 +241,7 @@ object MassaProviderScript {
             // Wallet class compatible with Massa wallet-provider interface
             class MassaPayWallet {
                 constructor() {
-                    this._name = 'MassaPay';
+                    this._name = 'MassaConnect';
                     this._connected = false;
                     this._accounts = [];
                     this._listeners = {};
@@ -250,7 +250,7 @@ object MassaProviderScript {
                     // Add client for DApps that access it through wallet.client
                     this.client = {
                         getNodesStatus: async () => [{
-                            node_id: 'MassaPay',
+                            node_id: 'MassaConnect',
                             node_ip: 'mainnet.massa.net',
                             version: '1.0.0',
                             chain_id: 77658377,
@@ -258,7 +258,7 @@ object MassaProviderScript {
                             connected: true
                         }],
                         getNodeStatus: async () => ({
-                            node_id: 'MassaPay',
+                            node_id: 'MassaConnect',
                             node_ip: 'mainnet.massa.net', 
                             version: '1.0.0',
                             chain_id: 77658377,
@@ -280,7 +280,7 @@ object MassaProviderScript {
                 }
                 
                 name() {
-                    return 'MassaPay';
+                    return 'MassaConnect';
                 }
                 
                 enabled() {
@@ -337,7 +337,7 @@ object MassaProviderScript {
                 // Direct node status methods on wallet
                 async getNodesStatus() {
                     return [{
-                        node_id: 'MassaPay',
+                        node_id: 'MassaConnect',
                         node_ip: 'mainnet.massa.net',
                         version: '1.0.0',
                         chain_id: 77658377,
@@ -348,7 +348,7 @@ object MassaProviderScript {
                 
                 async getNodeStatus() {
                     return {
-                        node_id: 'MassaPay',
+                        node_id: 'MassaConnect',
                         node_ip: 'mainnet.massa.net',
                         version: '1.0.0',
                         chain_id: 77658377,
@@ -718,7 +718,7 @@ object MassaProviderScript {
                     getNodesStatus: async () => {
                         return {
                             result: {
-                                node_id: 'MassaPay',
+                                node_id: 'MassaConnect',
                                 node_ip: 'mainnet.massa.net',
                                 version: '1.0.0',
                                 chain_id: 77658377,
@@ -914,7 +914,7 @@ object MassaProviderScript {
                     getNodesStatus: async () => {
                         return {
                             result: {
-                                node_id: 'MassaPay',
+                                node_id: 'MassaConnect',
                                 node_ip: 'mainnet.massa.net',
                                 version: '1.0.0',
                                 chain_id: 77658377,
@@ -1153,7 +1153,7 @@ object MassaProviderScript {
             // 7. EIP-6963 Provider Announcement (used by modern DApps)
             const providerInfo = {
                 uuid: 'massapay-wallet-' + Date.now(),
-                name: 'MassaPay',
+                name: 'MassaConnect',
                 icon: 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="#6366f1"/><text x="50" y="65" font-size="40" text-anchor="middle" fill="white" font-weight="bold">M</text></svg>'),
                 rdns: 'com.massapay.wallet'
             };
@@ -1673,7 +1673,7 @@ object MassaProviderScript {
                     detail: { address: address } 
                 }));
                 window.dispatchEvent(new CustomEvent('wallet:connected', { 
-                    detail: { address: address, provider: 'MassaPay' } 
+                    detail: { address: address, provider: 'MassaConnect' } 
                 }));
                 
                 // Post messages that bearby extension would send
@@ -2001,7 +2001,7 @@ object MassaProviderScript {
                             console.log('[MassaPay-Early] bearby.massa.getNodesStatus called');
                             return {
                                 result: {
-                                    node_id: 'MassaPay',
+                                    node_id: 'MassaConnect',
                                     node_ip: 'mainnet.massa.net',
                                     version: '1.0.0',
                                     chain_id: 77658377,
@@ -2285,7 +2285,7 @@ object MassaProviderScript {
                             console.log('[MassaPay-Early] web3.massa.getNodesStatus called');
                             return {
                                 result: {
-                                    node_id: 'MassaPay',
+                                    node_id: 'MassaConnect',
                                     node_ip: 'mainnet.massa.net',
                                     version: '1.0.0',
                                     chain_id: 77658377,
@@ -2724,7 +2724,7 @@ object MassaProviderScript {
                                 result: [{
                                     name: 'Massa Wallet',
                                     author: 'Massa Labs',
-                                    description: 'MassaPay Wallet',
+                                    description: 'MassaConnect Wallet',
                                     home: '/',
                                     icon: '',
                                     status: 'Up',
@@ -2829,7 +2829,7 @@ object MassaProviderScript {
                                     result: [{
                                         name: 'Massa Wallet',
                                         author: 'Massa Labs',
-                                        description: 'MassaPay Wallet',
+                                        description: 'MassaConnect Wallet',
                                         home: '/',
                                         icon: '',
                                         status: 'Up',

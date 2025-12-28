@@ -482,8 +482,8 @@ fun SettingsScreen(
                 ModernSettingsCard {
                     ModernSettingsItem(
                         icon = Icons.Outlined.Info,
-                        title = "MassaPay",
-                        subtitle = "Version 1.2.1 - Tap to view details",
+                        title = "MassaConnect",
+                        subtitle = "Version 1.3.0 - Tap to view details",
                         onClick = { showAboutDialog = true }
                     )
                 }
@@ -546,7 +546,7 @@ fun SettingsScreen(
                                         }
                                         
                                         Text(
-                                            text = "MassaPay",
+                                            text = "MassaConnect",
                                             style = MaterialTheme.typography.headlineMedium.copy(
                                                 fontWeight = FontWeight.Bold
                                             ),
@@ -558,7 +558,7 @@ fun SettingsScreen(
                                             color = Color.White.copy(alpha = 0.15f)
                                         ) {
                                             Text(
-                                                text = "v1.2.1",
+                                                text = "v1.3.0",
                                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                                                 style = MaterialTheme.typography.labelLarge,
                                                 color = Color.White
@@ -711,7 +711,7 @@ fun SettingsScreen(
                                             onClick = { 
                                                 val intent = android.content.Intent(
                                                     android.content.Intent.ACTION_VIEW,
-                                                    android.net.Uri.parse("https://x.com/MASSAPAYok")
+                                                    android.net.Uri.parse("https://x.com/massaconnect")
                                                 )
                                                 context.startActivity(intent)
                                             },
